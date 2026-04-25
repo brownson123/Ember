@@ -41,6 +41,10 @@ export default function MainDashboard() {
   };
 
   useEffect(() => {
+    dispatch({ type: 'SET_ROLE', payload: isTower ? 'tower' : 'responder' });
+  }, [isTower, dispatch]);
+
+  useEffect(() => {
     if (activeTab === 'chat') {
       dispatch({ type: 'MARK_CHAT_READ' });
       return;

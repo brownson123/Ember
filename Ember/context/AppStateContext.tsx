@@ -25,7 +25,7 @@ export interface AIRecommendation {
 interface AppState {
   activeTab: AppTab;
   messages: ChatMessage[];
-  recommendations: AIRecommendation[];  // add this
+  recommendations: AIRecommendation[];
   activeTeamEmails: string[];
   joinRequest: {
     requestId: string;
@@ -33,9 +33,11 @@ interface AppState {
   } | null;
   unreadChatCount: number;
   unreadInfoCount: number;
+  role: 'tower' | 'responder' | null;
 }
 
 type Action =
+  | { type: 'SET_ROLE'; payload: 'tower' | 'responder' }
   | { type: 'SET_ACTIVE_TAB'; payload: AppTab }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'MARK_CHAT_READ' }
@@ -66,10 +68,13 @@ const initialState: AppState = {
   joinRequest: null,
   recommendations: [],
   activeTeamEmails: [],
+  role: null,
 };
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'SET_ROLE':
+      return { ...state, role: action.payload };
     case 'SET_ACTIVE_TAB':
       return { ...state, activeTab: action.payload };
     case 'ADD_MESSAGE': {

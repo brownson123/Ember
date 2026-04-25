@@ -6,7 +6,7 @@ import { bridgefyManager } from '@/lib/bridgefyManager';
 import { wsManager } from '@/lib/webSocketManager';
 
 export default function GlobalListener() {
-  const { dispatch } = useAppState();
+  const { dispatch, state } = useAppState();
 
   useEffect(() => {
     const handleIncoming = (incoming: any) => {
@@ -72,6 +72,7 @@ export default function GlobalListener() {
           break;
 
         case 'voice_alert':
+          if (state.role === 'tower') break;
           if (data?.audioUrl) {
             playAudioFromBase64Url(data.audioUrl).catch(() => {
               speakTextFallback(data?.text ?? 'New update from command');
