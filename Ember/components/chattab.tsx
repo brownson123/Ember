@@ -60,9 +60,10 @@ export default function ChatTab({ isTower }: ChatTabProps) {
         return;
       }
   
+      const { data: freshUser } = await supabase.auth.getUser();
       const payload = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        sender: userEmail || (await supabase.auth.getUser()).data.user?.email || 'Unknown',
+        sender: freshUser.user?.email || userEmail || 'Unknown',
         imageBase64: base64,
         timestamp: Date.now(),
       };
@@ -78,7 +79,8 @@ export default function ChatTab({ isTower }: ChatTabProps) {
   const sendMessage = useCallback(async () => {
     const content = input.trim();
     if (!content) return;
-    const sender = userEmail || (await supabase.auth.getUser()).data.user?.email || 'Unknown';
+    const { data: freshUser } = await supabase.auth.getUser();
+    const sender = freshUser.user?.email || userEmail || 'Unknown';
     const payload = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sender,
