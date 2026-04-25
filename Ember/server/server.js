@@ -1,3 +1,5 @@
+require('dotenv').config({ path: require('path').join(__dirname, '../.env.local') });
+
 const WebSocket = require('ws');
 const { cloudVisionAnalyze, lookupProtocol, gemmaOfflineAnalysis } = require('./ai');
 const { createThread, addMessage, getThreadSummary } = require('./backboard');
@@ -176,9 +178,9 @@ wss.on('connection', (ws) => {
           ws,
           missionActive: true,
         });
-        if (!missionTeams.has(msg.towerId)) {
-          missionTeams.set(msg.towerId, new Set());
-        }
+        missionTeams.set(msg.towerId, new Set());
+        chatHistory.length = 0;
+        activeRecommendations.clear();
         broadcast(msg);
         broadcast({
           type: 'team_update',
