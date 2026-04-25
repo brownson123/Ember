@@ -12,6 +12,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import ChatTab from '@/components/chattab';
 import { useAppState } from '@/context/AppStateContext';
+import { sendMeshFirst } from '@/lib/transportManager';
 import { wsManager } from '@/lib/webSocketManager';
 
 type TabKey = 'overview' | 'chat' | 'info';
