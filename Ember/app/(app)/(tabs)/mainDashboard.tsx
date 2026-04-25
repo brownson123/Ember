@@ -28,15 +28,7 @@ export default function MainDashboard() {
     return `Connected to ${towerName ?? 'control tower'}`;
   }, [isTower, towerName]);
 
-  const pendingRequests = useMemo(
-    () => [
-      { id: '1', title: 'Supply route change', status: 'Pending approval' },
-      { id: '2', title: 'Protocol delta-4', status: 'Pending approval' },
-    ],
-    []
-  );
-
-  const setActiveTab = (tab: TabKey) => {
+const setActiveTab = (tab: TabKey) => {
     dispatch({ type: 'SET_ACTIVE_TAB', payload: tab });
   };
 
@@ -117,27 +109,52 @@ export default function MainDashboard() {
         {activeTab === 'info' && (
           <ScrollView contentContainerStyle={styles.infoContainer}>
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Incident Brief</Text>
+              <View style={styles.teamHeader}>
+                <MaterialCommunityIcons name="shield-alert" size={18} color={
+                  !state.missionInfo ? '#6b7280'
+                  : state.missionInfo.riskLevel === 'High' ? '#ef4444'
+                  : state.missionInfo.riskLevel === 'Moderate' ? '#fbbf24'
+                  : '#4ade80'
+                } />
+                <Text style={styles.panelTitle}>
+                  Risk Level: {state.missionInfo?.riskLevel ?? 'Unknown'}
+                </Text>
+              </View>
               <Text style={styles.panelText}>
-                This is the shared mission surface. Map and AI modules can be layered in next.
+                {state.missionInfo?.summary ?? 'No confirmed intelligence yet. Awaiting tower approvals.'}
               </Text>
             </View>
 
-            {isTower ? (
+            {(state.missionInfo?.hazards?.length ?? 0) > 0 && (
               <View style={styles.panel}>
-                <Text style={styles.panelTitle}>Pending Requests</Text>
-                {pendingRequests.map((request) => (
-                  <View key={request.id} style={styles.requestRow}>
-                    <Text style={styles.requestTitle}>{request.title}</Text>
-                    <Text style={styles.requestStatus}>{request.status}</Text>
+                <Text style={styles.panelTitle}>Confirmed Hazards</Text>
+                {state.missionInfo!.hazards.map((h, i) => (
+                  <View key={i} style={styles.requestRow}>
+                    <Text style={styles.requestTitle}>{h.analysis}</Text>
+                    <Text style={styles.requestStatus}>{h.protocol}</Text>
                   </View>
                 ))}
               </View>
-            ) : (
+            )}
+
+            {(state.missionInfo?.intel?.length ?? 0) > 0 && (
               <View style={styles.panel}>
-                <Text style={styles.panelTitle}>Approvals</Text>
+                <Text style={styles.panelTitle}>Field Intelligence</Text>
+                {state.missionInfo!.intel.map((item, i) => (
+                  <View key={i} style={styles.requestRow}>
+                    <Text style={styles.requestStatus}>{item.sender}</Text>
+                    <Text style={styles.requestTitle}>{item.content}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {!state.missionInfo && (
+              <View style={styles.panel}>
                 <Text style={styles.panelText}>
-                  Approvals are managed by control tower. Responders receive status updates only.
+                  {isTower
+                    ? 'Approve messages and hazard reports in the Chat tab to build the mission briefing.'
+                    : 'The mission briefing will appear here as the tower approves field reports.'}
                 </Text>
               </View>
             )}

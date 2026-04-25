@@ -71,6 +71,18 @@ export default function GlobalListener() {
           // Tower discovery list is local to ControlTowerSelect.
           break;
 
+        case 'mission_info_update':
+          dispatch({ type: 'SET_MISSION_INFO', payload: data.missionInfo });
+          dispatch({ type: 'MARK_INFO_READ' });
+          break;
+
+        case 'message_approval_update':
+          dispatch({
+            type: 'UPDATE_MESSAGE',
+            payload: { id: data.messageId, status: data.action === 'approve' ? 'approved' : 'denied' },
+          });
+          break;
+
         case 'voice_alert':
           if (state.role === 'tower') break;
           if (data?.audioUrl) {

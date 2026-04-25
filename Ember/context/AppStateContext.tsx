@@ -34,10 +34,17 @@ interface AppState {
   unreadChatCount: number;
   unreadInfoCount: number;
   role: 'tower' | 'responder' | null;
+  missionInfo: {
+    summary: string;
+    hazards: { analysis: string; protocol: string }[];
+    intel: { sender: string; content: string }[];
+    riskLevel: string;
+  } | null;
 }
 
 type Action =
   | { type: 'SET_ROLE'; payload: 'tower' | 'responder' }
+  | { type: 'SET_MISSION_INFO'; payload: AppState['missionInfo'] }
   | { type: 'SET_ACTIVE_TAB'; payload: AppTab }
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'MARK_CHAT_READ' }
@@ -69,12 +76,15 @@ const initialState: AppState = {
   recommendations: [],
   activeTeamEmails: [],
   role: null,
+  missionInfo: null,
 };
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SET_ROLE':
       return { ...state, role: action.payload };
+    case 'SET_MISSION_INFO':
+      return { ...state, missionInfo: action.payload };
     case 'SET_ACTIVE_TAB':
       return { ...state, activeTab: action.payload };
     case 'ADD_MESSAGE': {

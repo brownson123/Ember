@@ -1,7 +1,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../.env.local') });
 
 const WebSocket = require('ws');
-const { cloudVisionAnalyze, lookupProtocol, gemmaOfflineAnalysis } = require('./ai');
+const { cloudVisionAnalyze, lookupProtocol, gemmaOfflineAnalysis, generateMissionInfo } = require('./ai');
 const { createThread, addMessage, getThreadSummary } = require('./backboard');
 
 // Prevent gRPC/auth async errors from crashing the process when credentials are missing
@@ -22,6 +22,7 @@ const joinRequests = new Map(); // requestId -> { fromResponderWs, towerId, resp
 const missionTeams = new Map(); // towerId -> Set<responderEmail>
 const activeRecommendations = new Map(); // recId -> { analysis, protocol }
 const threadByTower = new Map(); // towerId -> threadId
+const approvedContext = []; // approved messages and recommendations for mission briefing
 
 function sendTo(ws, data) {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -128,7 +129,11 @@ wss.on('connection', (ws) => {
       case 'recommendation_action': {
         if (msg.action === 'approve') {
           const approvedRec = activeRecommendations.get(msg.recommendationId);
-          if (approvedRec) {
+          if (approvedRec && !approvedContext.some(i => i.id === msg.recommendationId)) {
+            approvedContext.push({ type: 'hazard', id: msg.recommendationId, ...approvedRec });
+            const missionInfo = generateMissionInfo(approvedContext);
+            broadcast({ type: 'mission_info_update', missionInfo });
+
             try {
               const audioUrl = await generateVoiceAlert(approvedRec.protocol);
               broadcast({
@@ -170,6 +175,16 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'message_approval': {
+        if (msg.action === 'approve' && !approvedContext.some(i => i.id === msg.messageId)) {
+          approvedContext.push({ type: 'intel', id: msg.messageId, content: msg.content, sender: msg.sender });
+          const missionInfo = generateMissionInfo(approvedContext);
+          broadcast({ type: 'mission_info_update', missionInfo });
+        }
+        broadcast({ type: 'message_approval_update', messageId: msg.messageId, action: msg.action });
+        break;
+      }
+
       case 'mission_start': {
         const existing = towers.get(msg.towerId) || { name: msg.towerName, ws };
         towers.set(msg.towerId, {
@@ -181,6 +196,7 @@ wss.on('connection', (ws) => {
         missionTeams.set(msg.towerId, new Set());
         chatHistory.length = 0;
         activeRecommendations.clear();
+        approvedContext.length = 0;
         broadcast(msg);
         broadcast({
           type: 'team_update',

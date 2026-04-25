@@ -52,9 +52,45 @@ async function gemmaOfflineAnalysis(text = '', objects = []) {
   return lookupProtocol(objects, text);
 }
 
+function generateMissionInfo(approvedItems = []) {
+  const hazards = approvedItems.filter(i => i.type === 'hazard');
+  const intel = approvedItems.filter(i => i.type === 'intel');
+
+  if (approvedItems.length === 0) {
+    return {
+      summary: 'No confirmed intelligence yet. Awaiting tower approvals.',
+      hazards: [],
+      intel: [],
+      riskLevel: 'Unknown',
+    };
+  }
+
+  const riskLevel = hazards.length === 0 ? 'Low'
+    : hazards.length <= 2 ? 'Moderate'
+    : 'High';
+
+  const summary = [
+    hazards.length > 0
+      ? `${hazards.length} confirmed hazard${hazards.length > 1 ? 's' : ''}: ${hazards.map(h => h.analysis).join('; ')}.`
+      : 'No confirmed hazards.',
+    intel.length > 0
+      ? `${intel.length} confirmed field report${intel.length > 1 ? 's' : ''} from responders.`
+      : '',
+    `Active protocols: ${hazards.length > 0 ? hazards.map(h => h.protocol).join(' | ') : 'None'}.`,
+  ].filter(Boolean).join(' ');
+
+  return {
+    summary,
+    hazards: hazards.map(h => ({ analysis: h.analysis, protocol: h.protocol })),
+    intel: intel.map(i => ({ sender: i.sender, content: i.content })),
+    riskLevel,
+  };
+}
+
 module.exports = {
   cloudVisionAnalyze,
   lookupProtocol,
   gemmaOfflineAnalysis,
+  generateMissionInfo,
 };
 
