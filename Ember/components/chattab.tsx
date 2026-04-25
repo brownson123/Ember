@@ -60,6 +60,12 @@ export default function ChatTab({ isTower }: ChatTabProps) {
         return;
       }
   
+      // Guard: reject images over ~200KB base64 (~150KB binary) to avoid crashing native WebSocket clients
+      if (base64 && base64.length > 200_000) {
+        alert('Image is too large to send over the mesh. Please try a smaller image.');
+        return;
+      }
+
       const { data: freshUser } = await supabase.auth.getUser();
       const payload = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
