@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { sendMeshFirst } from '@/lib/transportManager';
+import { wsManager } from '@/lib/webSocketManager';
+import { useLocalSearchParams } from 'expo-router';
 
 interface ChatTabProps {
   isTower: boolean;
@@ -19,6 +21,7 @@ export default function ChatTab({ isTower }: ChatTabProps) {
   const [input, setInput] = useState('');
   const [userEmail, setUserEmail] = useState<string>('');
   const { state } = useAppState();
+  const { towerId } = useLocalSearchParams<{ towerId?: string }>();
 
   const resizeForMesh = useCallback(async (uri: string) => {
     const result = await ImageManipulator.manipulateAsync(
@@ -124,6 +127,22 @@ export default function ChatTab({ isTower }: ChatTabProps) {
             {item.status === 'pending' ? <Text style={styles.pendingText}>Pending approval</Text> : null}
             {item.status === 'approved' ? <Text style={styles.approvedText}>Approved</Text> : null}
             {item.status === 'denied' ? <Text style={styles.deniedText}>Denied</Text> : null}
+            {isTower && item.status === 'pending' && (
+              <View style={styles.approvalButtons}>
+                <TouchableOpacity
+                  style={[styles.approvalBtn, styles.approvalDeny]}
+                  onPress={() => wsManager.send({ type: 'recommendation_action', action: 'deny', recommendationId: item.id, towerId })}
+                >
+                  <Text style={styles.approvalBtnText}>Deny</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.approvalBtn, styles.approvalApprove]}
+                  onPress={() => wsManager.send({ type: 'recommendation_action', action: 'approve', recommendationId: item.id, towerId })}
+                >
+                  <Text style={styles.approvalBtnText}>Approve</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : null}
         <Text style={styles.time}>
@@ -205,6 +224,11 @@ const styles = StyleSheet.create({
   pendingText: { color: '#fbbf24', fontSize: 12, marginTop: 6 },
   approvedText: { color: '#4ade80', fontSize: 12, marginTop: 6 },
   deniedText: { color: '#ef4444', fontSize: 12, marginTop: 6 },
+  approvalButtons: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  approvalBtn: { flex: 1, borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
+  approvalApprove: { backgroundColor: '#00E5FF' },
+  approvalDeny: { backgroundColor: '#ef4444' },
+  approvalBtnText: { color: '#0B0E14', fontWeight: '700', fontSize: 13 },
   time: { color: '#6b7280', fontSize: 10, alignSelf: 'flex-end', marginTop: 4 },
   inputBar: {
     flexDirection: 'row', padding: 12, borderTopWidth: 1,
