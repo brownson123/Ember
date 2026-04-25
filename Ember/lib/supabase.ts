@@ -10,16 +10,16 @@ const ExpoSecureStoreAdapter: {
 } = Platform.select({
   web: {
     getItem: async (key: string) => {
-      if (typeof localStorage === "undefined") return null;
-      return localStorage.getItem(key);
+      if (typeof sessionStorage === "undefined") return null;
+      return sessionStorage.getItem(key);
     },
     setItem: async (key: string, value: string) => {
-      if (typeof localStorage === "undefined") return;
-      localStorage.setItem(key, value);
+      if (typeof sessionStorage === "undefined") return;
+      sessionStorage.setItem(key, value);
     },
     removeItem: async (key: string) => {
-      if (typeof localStorage === "undefined") return;
-      localStorage.removeItem(key);
+      if (typeof sessionStorage === "undefined") return;
+      sessionStorage.removeItem(key);
     },
   },
   default: {

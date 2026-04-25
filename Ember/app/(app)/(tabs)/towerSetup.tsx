@@ -12,6 +12,7 @@ import {
     View,
 } from 'react-native';
 import Svg, { Circle, Defs, Line, Path, Pattern, Rect } from 'react-native-svg';
+import { wsManager } from '@/lib/webSocketManager';
 
 const { width, height } = Dimensions.get('window');
 
@@ -22,8 +23,18 @@ export default function TowerSetup() {
   const handleBroadcast = () => {
     if (!towerName.trim()) return;
     const cleanName = towerName.trim();
+    const normalizedTowerId = cleanName.toLowerCase().replace(/\s+/g, '-');
+
+    // Register early so responders can already discover this tower as standing by.
+    wsManager.send({
+      type: 'tower_register',
+      towerId: normalizedTowerId,
+      towerName: cleanName,
+      missionActive: false,
+    });
+
     const encodedName = encodeURIComponent(cleanName);
-    const towerId = encodeURIComponent(cleanName.toLowerCase().replace(/\s+/g, '-'));
+    const towerId = encodeURIComponent(normalizedTowerId);
     router.push(`/(app)/(tabs)/towerDashboard?towerName=${encodedName}&towerId=${towerId}` as Href);
   };
 

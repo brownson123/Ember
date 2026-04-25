@@ -11,6 +11,7 @@ export default function Dashboard() {
   const router = useRouter();
   const { towerId, towerName } = useLocalSearchParams<{ towerId?: string; towerName?: string }>();
   const wsUrl = getWebSocketUrl();
+  const [activeEmail, setActiveEmail] = React.useState<string>('Unknown');
 
   const onMessage = useCallback(
     (msg: { type?: string; towerId?: string; towerName?: string }) => {
@@ -26,6 +27,18 @@ export default function Dashboard() {
   );
 
   const { connected } = useWebSocket(wsUrl, onMessage);
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (!mounted) return;
+      setActiveEmail(data.user?.email ?? 'Unknown');
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let activeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -69,6 +82,7 @@ export default function Dashboard() {
       <Text style={styles.subtitle}>
         Connected to {towerName ?? 'control tower'}.
       </Text>
+      <Text style={styles.identity}>Active user: {activeEmail}</Text>
       <Text style={styles.connection}>
         {connected ? 'Listening for mission start...' : 'Connecting to sync channel...'}
       </Text>
@@ -93,6 +107,11 @@ const styles = StyleSheet.create({
   subtitle: {
     color: '#9ca3af',
     fontSize: 14,
+  },
+  identity: {
+    color: '#e5e7eb',
+    fontSize: 12,
+    marginTop: 8,
   },
   connection: {
     color: '#00E5FF',

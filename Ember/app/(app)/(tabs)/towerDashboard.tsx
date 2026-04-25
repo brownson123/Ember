@@ -84,6 +84,13 @@ export default function TowerDashboard() {
 
   const handleStartMission = () => {
     send({
+      type: 'tower_register',
+      towerId: resolvedTowerId,
+      towerName: label,
+      missionActive: true,
+    });
+
+    send({
       type: 'mission_start',
       towerId: resolvedTowerId,
       towerName: label,

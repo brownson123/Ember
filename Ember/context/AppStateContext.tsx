@@ -5,13 +5,29 @@ export interface ChatMessage {
   sender: string;
   content: string;
   timestamp: number;
+  type?: 'chat_message' | 'hazard_report';
+  imageBase64?: string;
 }
 
 type AppTab = 'overview' | 'chat' | 'info';
 
+export interface AIRecommendation {
+  id: string;
+  analysis: string;
+  protocol: string;
+  status: 'pending' | 'approved' | 'denied';
+  timestamp: number;
+}
+
 interface AppState {
   activeTab: AppTab;
   messages: ChatMessage[];
+  recommendations: AIRecommendation[];  // add this
+  activeTeamEmails: string[];
+  joinRequest: {
+    requestId: string;
+    responderEmail: string;
+  } | null;
   unreadChatCount: number;
   unreadInfoCount: number;
 }
@@ -21,13 +37,23 @@ type Action =
   | { type: 'ADD_MESSAGE'; payload: ChatMessage }
   | { type: 'MARK_CHAT_READ' }
   | { type: 'MARK_INFO_READ' }
+  | { type: 'ADD_RECOMMENDATION'; payload: AIRecommendation }
+  | { type: 'UPDATE_RECOMMENDATION'; payload: { id: string; status: 'approved' | 'denied' } }
+  | { type: 'SHOW_JOIN_REQUEST'; payload: { requestId: string; responderEmail: string } }
+  | { type: 'HIDE_JOIN_REQUEST' }
+  | { type: 'LOAD_MESSAGES'; payload: ChatMessage[] }
+  | { type: 'SET_ACTIVE_TEAM'; payload: string[] }
   | { type: 'CLEAR_MESSAGES' };
+  
 
 const initialState: AppState = {
   activeTab: 'overview',
   messages: [],
   unreadChatCount: 0,
   unreadInfoCount: 0,
+  joinRequest: null,
+  recommendations: [],
+  activeTeamEmails: [],
 };
 
 function appReducer(state: AppState, action: Action): AppState {
@@ -45,6 +71,35 @@ function appReducer(state: AppState, action: Action): AppState {
         unreadChatCount: state.unreadChatCount + (isChatActive ? 0 : 1),
       };
     }
+    case 'ADD_RECOMMENDATION': {
+      const exists = state.recommendations.some(r => r.id === action.payload.id);
+      if (exists) return state;
+      return {
+        ...state,
+        recommendations: [...state.recommendations, action.payload],
+        unreadChatCount: state.activeTab === 'chat' ? state.unreadChatCount : state.unreadChatCount + 1,
+      };
+    }
+    
+    case 'UPDATE_RECOMMENDATION': {
+      return {
+        ...state,
+        recommendations: state.recommendations.map(r =>
+          r.id === action.payload.id ? { ...r, status: action.payload.status } : r
+        ),
+      };
+    }
+    case 'SHOW_JOIN_REQUEST':
+  return { ...state, joinRequest: action.payload };
+
+case 'HIDE_JOIN_REQUEST':
+  return { ...state, joinRequest: null };
+
+case 'LOAD_MESSAGES':
+  // Replace messages entirely (for late join)
+  return { ...state, messages: action.payload };
+    case 'SET_ACTIVE_TEAM':
+      return { ...state, activeTeamEmails: action.payload };
     case 'MARK_CHAT_READ':
       return { ...state, unreadChatCount: 0 };
     case 'MARK_INFO_READ':

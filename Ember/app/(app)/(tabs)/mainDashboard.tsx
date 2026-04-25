@@ -6,11 +6,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import ChatTab from '@/components/chattab';
 import { useAppState } from '@/context/AppStateContext';
+import { wsManager } from '@/lib/webSocketManager';
 
 type TabKey = 'overview' | 'chat' | 'info';
 
@@ -48,6 +50,28 @@ export default function MainDashboard() {
     }
   }, [activeTab, dispatch]);
 
+  useEffect(() => {
+    if (!isTower) return;
+
+    const normalizedTowerId = (towerName ?? 'control-tower').toLowerCase().replace(/\s+/g, '-');
+    const normalizedTowerName = towerName ?? 'Control Tower';
+
+    const registerTower = () => {
+      wsManager.send({
+        type: 'tower_register',
+        towerId: normalizedTowerId,
+        towerName: normalizedTowerName,
+        missionActive: true,
+      });
+    };
+
+    // Register immediately, then keep alive in case of reconnect/server restart.
+    registerTower();
+    const intervalId = setInterval(registerTower, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [isTower, towerName]);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -57,13 +81,31 @@ export default function MainDashboard() {
 
       <View style={styles.tabContent}>
         {activeTab === 'overview' && (
-          <View style={styles.panel}>
-            <Text style={styles.panelTitle}>Operational Sync</Text>
-            <Text style={styles.panelText}>
-              All connected devices listen to the same mission start event over the websocket channel.
-            </Text>
-            <Text style={styles.panelMeta}>{isTower ? 'Role: Control Tower' : 'Role: Responder'}</Text>
-          </View>
+          <>
+            <View style={styles.panel}>
+              <Text style={styles.panelTitle}>Operational Sync</Text>
+              <Text style={styles.panelText}>
+                All connected devices listen to the same mission start event over the websocket channel.
+              </Text>
+              <Text style={styles.panelMeta}>{isTower ? 'Role: Control Tower' : 'Role: Responder'}</Text>
+            </View>
+
+            <View style={styles.panel}>
+              <View style={styles.teamHeader}>
+                <MaterialCommunityIcons name="account-group" size={18} color="#00E5FF" />
+                <Text style={styles.panelTitle}>Active Team</Text>
+              </View>
+              {state.activeTeamEmails.length === 0 ? (
+                <Text style={styles.panelText}>No responders accepted into mission yet.</Text>
+              ) : (
+                state.activeTeamEmails.map((email) => (
+                  <Text key={email} style={styles.teamEmail}>
+                    - {email}
+                  </Text>
+                ))
+              )}
+            </View>
+          </>
         )}
 
         {activeTab === 'chat' && <ChatTab isTower={isTower} />}
@@ -155,6 +197,47 @@ export default function MainDashboard() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {isTower && state.joinRequest && (
+        <Modal transparent visible animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Join Request</Text>
+              <Text style={styles.modalText}>
+                {state.joinRequest.responderEmail} wants to join the active mission.
+              </Text>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.denyButton]}
+                  onPress={() => {
+                    wsManager.send({
+                      type: 'join_response',
+                      requestId: state.joinRequest?.requestId,
+                      accept: false,
+                    });
+                    dispatch({ type: 'HIDE_JOIN_REQUEST' });
+                  }}
+                >
+                  <Text style={styles.modalButtonText}>Deny</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.acceptButton]}
+                  onPress={() => {
+                    wsManager.send({
+                      type: 'join_response',
+                      requestId: state.joinRequest?.requestId,
+                      accept: true,
+                    });
+                    dispatch({ type: 'HIDE_JOIN_REQUEST' });
+                  }}
+                >
+                  <Text style={styles.modalButtonText}>Accept</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -209,6 +292,17 @@ const styles = StyleSheet.create({
     color: '#00E5FF',
     fontSize: 12,
     marginTop: 8,
+  },
+  teamHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  teamEmail: {
+    color: '#e5e7eb',
+    fontSize: 13,
+    marginBottom: 4,
   },
   infoContainer: {
     paddingBottom: 16,
@@ -269,6 +363,54 @@ const styles = StyleSheet.create({
   badgeText: {
     color: '#fff',
     fontSize: 10,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '82%',
+    backgroundColor: '#1a1f2e',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#2a3441',
+    padding: 20,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalText: {
+    color: '#9ca3af',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  denyButton: {
+    backgroundColor: '#ef4444',
+  },
+  acceptButton: {
+    backgroundColor: '#00E5FF',
+  },
+  modalButtonText: {
+    color: '#0B0E14',
+    fontSize: 14,
     fontWeight: '700',
   },
 });

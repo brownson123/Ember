@@ -1,8 +1,9 @@
 // screens/ControlTowerSelect.tsx
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Dimensions,
   FlatList,
   StyleSheet,
@@ -12,192 +13,100 @@ import {
 } from 'react-native';
 import Svg, { Circle, Defs, Line, Path, Pattern, Rect } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
-import { useWebSocket } from '@/hooks/websockets';
-import { getWebSocketUrl } from '@/hooks/get-websocket-url';
+import { useAppState, type ChatMessage } from '@/context/AppStateContext';
+import { wsManager } from '@/lib/webSocketManager';
 
 const { width, height } = Dimensions.get('window');
-const TOWER_CHANNEL = 'tower-lobby';
 
 type Tower = {
   id: string;
   name: string;
-  signalStrength: number;
-  responders: number;
-  role: string;
+  missionActive: boolean;
+  responders?: number;
 };
 
 export default function ControlTowerSelect() {
   const router = useRouter();
+  const { dispatch } = useAppState();
   const [availableTowers, setAvailableTowers] = useState<Tower[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
-  const wsUrl = getWebSocketUrl();
-
-  const selectedTower = useMemo(
-    () => availableTowers.find((tower) => tower.id === selectedId) ?? null,
-    [availableTowers, selectedId]
-  );
-
-  const onMissionMessage = useCallback(
-    (msg: { type?: string; towerId?: string; towerName?: string }) => {
-      if (msg?.type !== 'mission_start' || !selectedTower) return;
-      if (msg.towerId && msg.towerId !== selectedTower.id) return;
-
-      const encodedId = encodeURIComponent(selectedTower.id);
-      const encodedName = encodeURIComponent(selectedTower.name);
-      router.replace(`/mainDashboard?role=responder&towerId=${encodedId}&towerName=${encodedName}` as Href);
-    },
-    [router, selectedTower]
-  );
-
-  useWebSocket(wsUrl, onMissionMessage);
+  const [joiningTowerId, setJoiningTowerId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState('Unknown');
 
   useEffect(() => {
-    let activeChannel: ReturnType<typeof supabase.channel> | null = null;
-    let isMounted = true;
-
-    const syncTowersFromPresence = () => {
-      if (!activeChannel || !isMounted) return;
-      const presence = activeChannel.presenceState<{
-        role?: 'tower' | 'responder';
-        towerId?: string;
-        towerName?: string;
-        updatedAt?: string;
-      }>();
-
-      const uniqueTowers = new Map<string, Tower>();
-
-      Object.values(presence).forEach((sessions) => {
-        sessions.forEach((session) => {
-          if (session.role !== 'tower' || !session.towerId) return;
-
-          if (!uniqueTowers.has(session.towerId)) {
-            uniqueTowers.set(session.towerId, {
-              id: session.towerId,
-              name: session.towerName ?? 'Control Tower',
-              signalStrength: 100,
-              responders: 0,
-              role: 'Control Tower',
-            });
-          }
-        });
-      });
-
-      // Count responder sessions per tower.
-      Object.values(presence).forEach((sessions) => {
-        sessions.forEach((session) => {
-          if (session.role !== 'responder' || !session.towerId) return;
-          const tower = uniqueTowers.get(session.towerId);
-          if (tower) {
-            tower.responders += 1;
-          }
-        });
-      });
-
-      const nextTowers = Array.from(uniqueTowers.values());
-      setAvailableTowers(nextTowers);
-
-      // Reset selection if selected tower no longer exists.
-      setSelectedId((prev) => (prev && nextTowers.some((tower) => tower.id === prev) ? prev : null));
-    };
-
-    const setupChannel = async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const userId = auth.user?.id ?? `responder-${Date.now()}`;
-
-      activeChannel = supabase.channel(TOWER_CHANNEL, {
-        config: { presence: { key: `responder-${userId}` } },
-      });
-
-      activeChannel
-        .on('presence', { event: 'sync' }, syncTowersFromPresence)
-        .on('presence', { event: 'join' }, syncTowersFromPresence)
-        .on('presence', { event: 'leave' }, syncTowersFromPresence)
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED' && activeChannel) {
-            await activeChannel.track({
-              role: 'responder',
-              towerId: null,
-              updatedAt: new Date().toISOString(),
-            });
-          }
-        });
-    };
-
-    void setupChannel();
-
-    return () => {
-      isMounted = false;
-      if (activeChannel) {
-        void activeChannel.untrack();
-        void supabase.removeChannel(activeChannel);
-      }
-    };
+    supabase.auth.getUser().then(({ data }) => {
+      setUserEmail(data.user?.email ?? 'Unknown');
+    });
   }, []);
 
-  const handleConnect = () => {
-    if (!selectedTower) return;
-    setConnecting(true);
-    setTimeout(() => {
-      setConnecting(false);
-      const encodedName = encodeURIComponent(selectedTower.name);
-      const encodedId = encodeURIComponent(selectedTower.id);
-      router.push(`/dashboard?towerName=${encodedName}&towerId=${encodedId}` as Href);
-    }, 1500);
+  useEffect(() => {
+    const requestTowers = () => {
+      wsManager.send({ type: 'get_towers' });
+    };
+    requestTowers();
+    const pollId = setInterval(requestTowers, 4000);
+
+    const unsubscribe = wsManager.subscribe((data) => {
+      if (data?.type === 'tower_list') {
+        setAvailableTowers(data.towers ?? []);
+      }
+
+      if (data?.type === 'mission_joined') {
+        dispatch({ type: 'LOAD_MESSAGES', payload: (data.messages ?? []) as ChatMessage[] });
+        dispatch({ type: 'SET_ACTIVE_TEAM', payload: data.teamEmails ?? [] });
+        setJoiningTowerId(null);
+        const encodedName = encodeURIComponent(data.towerName ?? 'Control Tower');
+        const encodedId = encodeURIComponent(data.towerId ?? '');
+        router.replace(`/mainDashboard?role=responder&towerId=${encodedId}&towerName=${encodedName}` as Href);
+      }
+
+      if (data?.type === 'join_denied') {
+        setJoiningTowerId(null);
+        Alert.alert('Join Denied', data.reason ?? 'The control tower did not accept your request.');
+      }
+    });
+
+    return () => {
+      clearInterval(pollId);
+      unsubscribe();
+    };
+  }, [dispatch, router]);
+
+  const handleJoinMission = (tower: Tower) => {
+    setJoiningTowerId(tower.id);
+    wsManager.send({
+      type: 'join_request',
+      towerId: tower.id,
+      responderEmail: userEmail,
+    });
   };
 
   const renderTowerItem = ({ item }: { item: Tower }) => {
-    const isSelected = item.id === selectedId;
+    const isJoiningThis = joiningTowerId === item.id;
     return (
       <TouchableOpacity
-        style={[styles.towerCard, isSelected && styles.towerCardSelected]}
-        onPress={() => setSelectedId(item.id)}
-        activeOpacity={0.7}
+        style={[styles.towerCard, item.missionActive && styles.towerCardSelected]}
+        activeOpacity={0.9}
       >
         <View style={styles.towerHeader}>
           <View style={styles.towerIconContainer}>
-            <MaterialCommunityIcons
-              name={
-                item.role.includes('Medical')
-                  ? 'hospital-box'
-                  : item.role.includes('Police')
-                  ? 'shield-account'
-                  : item.role.includes('SAR')
-                  ? 'magnify'
-                  : 'fire'
-              }
-              size={24}
-              color={isSelected ? '#00E5FF' : '#9ca3af'}
-            />
+            <MaterialCommunityIcons name="tower-fire" size={24} color={item.missionActive ? '#00E5FF' : '#9ca3af'} />
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={[styles.towerName, isSelected && styles.towerNameSelected]}>
-              {item.name}
-            </Text>
-            <Text style={styles.towerRole}>{item.role}</Text>
-          </View>
-          <View style={styles.signalContainer}>
-            <MaterialCommunityIcons
-              name="signal-cellular-3"
-              size={18}
-              color={getSignalColor(item.signalStrength)}
-            />
-            <Text style={[styles.signalText, { color: getSignalColor(item.signalStrength) }]}>
-              {item.signalStrength}%
-            </Text>
+            <Text style={[styles.towerName, item.missionActive && styles.towerNameSelected]}>{item.name}</Text>
+            <Text style={styles.towerRole}>{item.missionActive ? 'Mission in Progress' : 'Standing By'}</Text>
           </View>
         </View>
 
-        <View style={styles.towerFooter}>
-          <MaterialCommunityIcons name="account-group" size={16} color="#6b7280" />
-          <Text style={styles.responderCount}>{item.responders} responders connected</Text>
-        </View>
-
-        {isSelected && (
-          <View style={styles.selectedIndicator}>
-            <View style={styles.selectedDot} />
-            <Text style={styles.selectedText}>Selected</Text>
-          </View>
+        {item.missionActive && (
+          <TouchableOpacity
+            style={[styles.connectButton, isJoiningThis && styles.connectButtonDisabled]}
+            onPress={() => handleJoinMission(item)}
+            disabled={isJoiningThis}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name={isJoiningThis ? 'loading' : 'login'} size={18} color="#0B0E14" />
+            <Text style={styles.connectButtonText}>{isJoiningThis ? 'Requesting...' : 'Join Mission'}</Text>
+          </TouchableOpacity>
         )}
       </TouchableOpacity>
     );
@@ -235,7 +144,7 @@ export default function ControlTowerSelect() {
 
       <View style={styles.content}>
         <Text style={styles.heading}>Select Control Tower</Text>
-        <Text style={styles.subtitle}>Choose the command node for your unit</Text>
+        <Text style={styles.subtitle}>Join active missions or wait for a new one</Text>
 
         <FlatList
           data={availableTowers}
@@ -254,34 +163,10 @@ export default function ControlTowerSelect() {
           }
         />
 
-        <TouchableOpacity
-          style={[
-            styles.connectButton,
-            (!selectedId || connecting || availableTowers.length === 0) && styles.connectButtonDisabled,
-          ]}
-          onPress={handleConnect}
-          disabled={!selectedId || connecting || availableTowers.length === 0}
-          activeOpacity={0.8}
-        >
-          {connecting ? (
-            <Text style={styles.connectingText}>Connecting...</Text>
-          ) : (
-            <>
-              <MaterialCommunityIcons name="connection" size={22} color="#0B0E14" />
-              <Text style={styles.connectButtonText}>Connect to Control Tower</Text>
-            </>
-          )}
-        </TouchableOpacity>
       </View>
     </View>
   );
 }
-
-const getSignalColor = (strength: number): string => {
-  if (strength >= 80) return '#4ade80';
-  if (strength >= 60) return '#fbbf24';
-  return '#ef4444';
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -412,18 +297,18 @@ const styles = StyleSheet.create({
   },
   connectButton: {
     backgroundColor: '#00E5FF',
-    borderRadius: 16,
-    paddingVertical: 18,
+    borderRadius: 12,
+    paddingVertical: 12,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     shadowColor: '#00E5FF',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
     elevation: 10,
-    marginTop: 20,
+    marginTop: 12,
   },
   connectButtonDisabled: {
     backgroundColor: '#2a3441',
@@ -433,7 +318,7 @@ const styles = StyleSheet.create({
   connectButtonText: {
     color: '#0B0E14',
     fontWeight: '700',
-    fontSize: 18,
+    fontSize: 14,
   },
   connectingText: {
     color: '#0B0E14',
