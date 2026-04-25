@@ -121,10 +121,12 @@ export default function ControlTowerSelect() {
   const handleJoinMission = async (tower: Tower) => {
     setJoiningTowerId(tower.id);
     const { data } = await supabase.auth.getUser();
-    const email = data.user?.email ?? userEmail;
+    const name = data.user?.user_metadata?.display_name
+      || data.user?.email?.split('@')[0]
+      || userEmail;
     sendMeshFirst('join_request', {
       towerId: tower.id,
-      responderEmail: email,
+      responderEmail: name,
     });
   };
 
@@ -211,6 +213,16 @@ export default function ControlTowerSelect() {
           }
         />
 
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={async () => {
+            await supabase.auth.signOut();
+            router.replace('/(auth)/login' as Href);
+          }}
+        >
+          <MaterialCommunityIcons name="logout" size={16} color="#ef4444" />
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -370,6 +382,18 @@ const styles = StyleSheet.create({
   },
   connectingText: {
     color: '#0B0E14',
+    fontWeight: '600',
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 16,
+  },
+  signOutText: {
+    color: '#ef4444',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

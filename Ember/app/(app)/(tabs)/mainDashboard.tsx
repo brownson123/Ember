@@ -9,8 +9,9 @@ import {
   Modal,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import ChatTab from '@/components/chattab';
+import { supabase } from '@/lib/supabase';
 import { useAppState } from '@/context/AppStateContext';
 import { sendMeshFirst } from '@/lib/transportManager';
 import { wsManager } from '@/lib/webSocketManager';
@@ -21,6 +22,16 @@ export default function MainDashboard() {
   const { role, towerName } = useLocalSearchParams<{ role?: string; towerName?: string }>();
   const isTower = role === 'tower';
   const { state, dispatch } = useAppState();
+  const router = useRouter();
+
+  const handleExitMission = () => {
+    router.replace(isTower ? '/towerSetup' as Href : '/controlTowerSelect' as Href);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.replace('/(auth)/login' as Href);
+  };
   const activeTab = state.activeTab as TabKey;
 
   const subtitle = useMemo(() => {
@@ -101,6 +112,16 @@ const setActiveTab = (tab: TabKey) => {
                 ))
               )}
             </View>
+
+            <TouchableOpacity style={styles.exitButton} onPress={handleExitMission}>
+              <MaterialCommunityIcons name="exit-run" size={18} color="#fbbf24" />
+              <Text style={styles.exitButtonText}>Exit Mission</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+              <MaterialCommunityIcons name="logout" size={18} color="#ef4444" />
+              <Text style={styles.signOutButtonText}>Sign Out</Text>
+            </TouchableOpacity>
           </>
         )}
 
@@ -324,6 +345,38 @@ const styles = StyleSheet.create({
     color: '#e5e7eb',
     fontSize: 13,
     marginBottom: 4,
+  },
+  exitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  exitButtonText: {
+    color: '#fbbf24',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  signOutButtonText: {
+    color: '#ef4444',
+    fontWeight: '600',
+    fontSize: 14,
   },
   infoContainer: {
     paddingBottom: 16,

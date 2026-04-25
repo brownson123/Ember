@@ -24,6 +24,7 @@ export default function LoginScreen() {
   const [showRegister, setShowRegister] = useState<boolean>(false);
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [displayName, setDisplayName] = useState<string>('');
   const [verificationId, setVerificationId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +62,8 @@ export default function LoginScreen() {
           password,
           options: {
             data: {
-              verification_id: verificationId, // store responder ID in user metadata
+              verification_id: verificationId,
+              display_name: displayName.trim() || email.split('@')[0],
             },
           },
         });
@@ -104,7 +106,7 @@ export default function LoginScreen() {
 
   const animatedHeight = slideAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 60],
+    outputRange: [0, 136],
     extrapolate: 'clamp',
   });
 
@@ -188,14 +190,24 @@ export default function LoginScreen() {
             ]}
           >
             {showRegister && (
-              <TextInput
-                style={styles.input}
-                placeholder="Responder ID / Verification Code"
-                placeholderTextColor="#6b7280"
-                value={verificationId}
-                onChangeText={setVerificationId}
-                editable={!loading}
-              />
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Display Name"
+                  placeholderTextColor="#6b7280"
+                  value={displayName}
+                  onChangeText={setDisplayName}
+                  editable={!loading}
+                />
+                <TextInput
+                  style={[styles.input, { marginBottom: 0 }]}
+                  placeholder="Responder ID / Verification Code"
+                  placeholderTextColor="#6b7280"
+                  value={verificationId}
+                  onChangeText={setVerificationId}
+                  editable={!loading}
+                />
+              </>
             )}
           </Animated.View>
 

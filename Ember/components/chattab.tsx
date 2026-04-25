@@ -32,10 +32,12 @@ export default function ChatTab({ isTower }: ChatTabProps) {
     return result.base64 ?? null;
   }, []);
 
-  // Get current user's email once
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email ?? 'Unknown');
+      const name = data.user?.user_metadata?.display_name
+        || data.user?.email?.split('@')[0]
+        || 'Unknown';
+      setUserEmail(name);
     });
   }, []);
 
@@ -72,7 +74,10 @@ export default function ChatTab({ isTower }: ChatTabProps) {
       const { data: freshUser } = await supabase.auth.getUser();
       const payload = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        sender: freshUser.user?.email || userEmail || 'Unknown',
+        sender: freshUser.user?.user_metadata?.display_name
+          || freshUser.user?.email?.split('@')[0]
+          || userEmail
+          || 'Unknown',
         imageBase64: base64,
         timestamp: Date.now(),
       };
@@ -89,7 +94,10 @@ export default function ChatTab({ isTower }: ChatTabProps) {
     const content = input.trim();
     if (!content) return;
     const { data: freshUser } = await supabase.auth.getUser();
-    const sender = freshUser.user?.email || userEmail || 'Unknown';
+    const sender = freshUser.user?.user_metadata?.display_name
+      || freshUser.user?.email?.split('@')[0]
+      || userEmail
+      || 'Unknown';
     const payload = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sender,

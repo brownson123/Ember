@@ -14,6 +14,7 @@ import {
 import Svg, { Circle, Defs, Line, Path, Pattern, Rect } from 'react-native-svg';
 import { sendMeshFirst } from '@/lib/transportManager';
 import { wsManager } from '@/lib/webSocketManager';
+import { supabase } from '@/lib/supabase';
 
 const { width, height } = Dimensions.get('window');
 
@@ -121,6 +122,17 @@ export default function TowerSetup() {
         <Text style={styles.hint}>
           Your device will act as the local command hub. No internet required.
         </Text>
+
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={async () => {
+            await supabase.auth.signOut();
+            router.replace('/(auth)/login' as Href);
+          }}
+        >
+          <MaterialCommunityIcons name="logout" size={16} color="#ef4444" />
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -221,5 +233,17 @@ const styles = StyleSheet.create({
     marginTop: 24,
     paddingHorizontal: 20,
     lineHeight: 18,
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 24,
+  },
+  signOutText: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
