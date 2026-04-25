@@ -12,11 +12,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import Svg, { Rect, Defs, Pattern, Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase'; 
 
 const { width, height } = Dimensions.get('window');
+const ADMIN_VERIFICATION_ID = '001';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -67,8 +68,8 @@ export default function LoginScreen() {
 
         if (error) throw error;
         if (data.user) {
-          // TODO: replace with your real post-auth route when created
-          router.push('/modal');
+          const responderId = (data.user.user_metadata?.verification_id as string | undefined) ?? verificationId;
+          navigateByRole(responderId);
         } else {
           setError('Registration failed. Please try again.');
         }
@@ -81,8 +82,8 @@ export default function LoginScreen() {
 
         if (error) throw error;
         if (data.user) {
-          // TODO: replace with your real post-auth route when created
-          router.push('/modal');
+          const responderId = data.user.user_metadata?.verification_id as string | undefined;
+          navigateByRole(responderId);
         }
       }
     } catch (err: any) {
@@ -90,6 +91,15 @@ export default function LoginScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const navigateByRole = (responderId: string | undefined) => {
+    if (responderId === ADMIN_VERIFICATION_ID) {
+      router.replace('/towerSetup' as Href);
+      return;
+    }
+
+    router.replace('/controlTowerSelect' as Href);
   };
 
   const animatedHeight = slideAnim.interpolate({
