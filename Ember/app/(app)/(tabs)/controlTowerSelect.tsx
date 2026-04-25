@@ -118,11 +118,13 @@ export default function ControlTowerSelect() {
     };
   }, [dispatch, router]);
 
-  const handleJoinMission = (tower: Tower) => {
+  const handleJoinMission = async (tower: Tower) => {
     setJoiningTowerId(tower.id);
+    const { data } = await supabase.auth.getUser();
+    const email = data.user?.email ?? userEmail;
     sendMeshFirst('join_request', {
       towerId: tower.id,
-      responderEmail: userEmail,
+      responderEmail: email,
     });
   };
 
