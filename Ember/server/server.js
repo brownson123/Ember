@@ -131,8 +131,9 @@ wss.on('connection', (ws) => {
           const approvedRec = activeRecommendations.get(msg.recommendationId);
           if (approvedRec && !approvedContext.some(i => i.id === msg.recommendationId)) {
             approvedContext.push({ type: 'hazard', id: msg.recommendationId, ...approvedRec });
-            const missionInfo = generateMissionInfo(approvedContext);
-            broadcast({ type: 'mission_info_update', missionInfo });
+            generateMissionInfo(approvedContext).then(missionInfo => {
+              broadcast({ type: 'mission_info_update', missionInfo });
+            });
 
             try {
               const audioUrl = await generateVoiceAlert(approvedRec.protocol);
@@ -178,8 +179,9 @@ wss.on('connection', (ws) => {
       case 'message_approval': {
         if (msg.action === 'approve' && !approvedContext.some(i => i.id === msg.messageId)) {
           approvedContext.push({ type: 'intel', id: msg.messageId, content: msg.content, sender: msg.sender });
-          const missionInfo = generateMissionInfo(approvedContext);
-          broadcast({ type: 'mission_info_update', missionInfo });
+          generateMissionInfo(approvedContext).then(missionInfo => {
+            broadcast({ type: 'mission_info_update', missionInfo });
+          });
         }
         broadcast({ type: 'message_approval_update', messageId: msg.messageId, action: msg.action });
         break;
