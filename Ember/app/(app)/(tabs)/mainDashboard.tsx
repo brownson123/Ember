@@ -12,7 +12,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import ChatTab from '@/components/chattab';
 import { useAppState } from '@/context/AppStateContext';
-import { sendMeshFirst } from '@/lib/transportManager';
 import { wsManager } from '@/lib/webSocketManager';
 
 type TabKey = 'overview' | 'chat' | 'info';
@@ -210,11 +209,11 @@ export default function MainDashboard() {
                 <TouchableOpacity
                   style={[styles.modalButton, styles.denyButton]}
                   onPress={() => {
-                    sendMeshFirst('join_denied', {
+                    wsManager.send({
+                      type: 'join_response',
                       requestId: state.joinRequest?.requestId,
-                      reason: 'Join request denied by control tower.',
+                      accept: false,
                     });
-
                     dispatch({ type: 'HIDE_JOIN_REQUEST' });
                   }}
                 >
@@ -223,13 +222,11 @@ export default function MainDashboard() {
                 <TouchableOpacity
                   style={[styles.modalButton, styles.acceptButton]}
                   onPress={() => {
-                    sendMeshFirst('mission_joined', {
-                      towerId: (towerName ?? 'control-tower').toLowerCase().replace(/\s+/g, '-'),
-                      towerName: towerName ?? 'Control Tower',
-                      messages: state.messages,
-                      teamEmails: state.activeTeamEmails,
+                    wsManager.send({
+                      type: 'join_response',
+                      requestId: state.joinRequest?.requestId,
+                      accept: true,
                     });
-
                     dispatch({ type: 'HIDE_JOIN_REQUEST' });
                   }}
                 >
