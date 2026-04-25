@@ -17,8 +17,14 @@ class BridgefyManager {
     if (this.isInitialized || !userId) return;
     this.myUserId = userId;
 
+    const apiKey = process.env.EXPO_PUBLIC_BRIDGEFY_API_KEY;
+    if (!apiKey) {
+      console.warn('Bridgefy init skipped: EXPO_PUBLIC_BRIDGEFY_API_KEY is missing.');
+      return;
+    }
+
     try {
-      await Bridgefy.initialize('<YOUR_BRIDGEFY_API_KEY>', true); // true = enable encryption
+      await Bridgefy.initialize(apiKey, true); // true = enable encryption
       await Bridgefy.start(userId, BridgefyPropagationProfile.REALTIME);
       this.isInitialized = true;
       console.log('Bridgefy started with user', userId);
