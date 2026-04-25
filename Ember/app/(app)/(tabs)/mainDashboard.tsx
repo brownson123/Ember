@@ -1,0 +1,274 @@
+import React, { useEffect, useMemo } from 'react';
+import {
+  SafeAreaView,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
+import ChatTab from '@/components/chattab';
+import { useAppState } from '@/context/AppStateContext';
+
+type TabKey = 'overview' | 'chat' | 'info';
+
+export default function MainDashboard() {
+  const { role, towerName } = useLocalSearchParams<{ role?: string; towerName?: string }>();
+  const isTower = role === 'tower';
+  const { state, dispatch } = useAppState();
+  const activeTab = state.activeTab as TabKey;
+
+  const subtitle = useMemo(() => {
+    if (isTower) return `Control tower active: ${towerName ?? 'Unnamed Tower'}`;
+    return `Connected to ${towerName ?? 'control tower'}`;
+  }, [isTower, towerName]);
+
+  const pendingRequests = useMemo(
+    () => [
+      { id: '1', title: 'Supply route change', status: 'Pending approval' },
+      { id: '2', title: 'Protocol delta-4', status: 'Pending approval' },
+    ],
+    []
+  );
+
+  const setActiveTab = (tab: TabKey) => {
+    dispatch({ type: 'SET_ACTIVE_TAB', payload: tab });
+  };
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      dispatch({ type: 'MARK_CHAT_READ' });
+      return;
+    }
+
+    if (activeTab === 'info') {
+      dispatch({ type: 'MARK_INFO_READ' });
+    }
+  }, [activeTab, dispatch]);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Main Dashboard</Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
+      </View>
+
+      <View style={styles.tabContent}>
+        {activeTab === 'overview' && (
+          <View style={styles.panel}>
+            <Text style={styles.panelTitle}>Operational Sync</Text>
+            <Text style={styles.panelText}>
+              All connected devices listen to the same mission start event over the websocket channel.
+            </Text>
+            <Text style={styles.panelMeta}>{isTower ? 'Role: Control Tower' : 'Role: Responder'}</Text>
+          </View>
+        )}
+
+        {activeTab === 'chat' && <ChatTab isTower={isTower} />}
+
+        {activeTab === 'info' && (
+          <ScrollView contentContainerStyle={styles.infoContainer}>
+            <View style={styles.panel}>
+              <Text style={styles.panelTitle}>Incident Brief</Text>
+              <Text style={styles.panelText}>
+                This is the shared mission surface. Map and AI modules can be layered in next.
+              </Text>
+            </View>
+
+            {isTower ? (
+              <View style={styles.panel}>
+                <Text style={styles.panelTitle}>Pending Requests</Text>
+                {pendingRequests.map((request) => (
+                  <View key={request.id} style={styles.requestRow}>
+                    <Text style={styles.requestTitle}>{request.title}</Text>
+                    <Text style={styles.requestStatus}>{request.status}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.panel}>
+                <Text style={styles.panelTitle}>Approvals</Text>
+                <Text style={styles.panelText}>
+                  Approvals are managed by control tower. Responders receive status updates only.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+        )}
+      </View>
+
+      <View style={styles.bottomNav}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => setActiveTab('overview')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons
+            name="view-dashboard"
+            size={24}
+            color={activeTab === 'overview' ? '#00E5FF' : 'rgba(255,255,255,0.6)'}
+          />
+          <Text style={[styles.navLabel, activeTab === 'overview' && styles.navLabelActive]}>
+            Overview
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => setActiveTab('chat')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons
+            name="message-text"
+            size={24}
+            color={activeTab === 'chat' ? '#00E5FF' : 'rgba(255,255,255,0.6)'}
+          />
+          {state.unreadChatCount > 0 && activeTab !== 'chat' && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{state.unreadChatCount}</Text>
+            </View>
+          )}
+          <Text style={[styles.navLabel, activeTab === 'chat' && styles.navLabelActive]}>
+            Chat
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => setActiveTab('info')}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons
+            name="information-outline"
+            size={24}
+            color={activeTab === 'info' ? '#00E5FF' : 'rgba(255,255,255,0.6)'}
+          />
+          {state.unreadInfoCount > 0 && activeTab !== 'info' && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{state.unreadInfoCount}</Text>
+            </View>
+          )}
+          <Text style={[styles.navLabel, activeTab === 'info' && styles.navLabelActive]}>
+            Info
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0B0E14',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1f2e',
+    backgroundColor: '#0f1419',
+  },
+  title: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  subtitle: {
+    color: '#9ca3af',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  tabContent: {
+    flex: 1,
+    padding: 16,
+  },
+  panel: {
+    backgroundColor: '#1a1f2e',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#2a3441',
+    padding: 14,
+    marginBottom: 12,
+  },
+  panelTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  panelText: {
+    color: '#9ca3af',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  panelMeta: {
+    color: '#00E5FF',
+    fontSize: 12,
+    marginTop: 8,
+  },
+  infoContainer: {
+    paddingBottom: 16,
+  },
+  requestRow: {
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#2a3441',
+  },
+  requestTitle: {
+    color: '#e5e7eb',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  requestStatus: {
+    color: '#fbbf24',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  bottomNav: {
+    flexDirection: 'row',
+    backgroundColor: '#0f1419',
+    borderTopWidth: 1,
+    borderTopColor: '#1a1f2e',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  navItem: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 48,
+    minHeight: 48,
+    gap: 4,
+    position: 'relative',
+  },
+  navLabel: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  navLabelActive: {
+    color: '#00E5FF',
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+});

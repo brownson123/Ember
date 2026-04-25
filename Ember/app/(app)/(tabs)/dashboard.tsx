@@ -1,12 +1,31 @@
-import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useWebSocket } from '@/hooks/websockets';
 import { supabase } from '@/lib/supabase';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import React, { useCallback, useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { getWebSocketUrl } from '@/hooks/get-websocket-url';
 
 const TOWER_CHANNEL = 'tower-lobby';
 
 export default function Dashboard() {
+  const router = useRouter();
   const { towerId, towerName } = useLocalSearchParams<{ towerId?: string; towerName?: string }>();
+  const wsUrl = getWebSocketUrl();
+
+  const onMessage = useCallback(
+    (msg: { type?: string; towerId?: string; towerName?: string }) => {
+      if (msg?.type !== 'mission_start') return;
+
+      const encodedTowerId = encodeURIComponent(msg.towerId ?? towerId ?? '');
+      const encodedTowerName = encodeURIComponent(msg.towerName ?? towerName ?? 'Control Tower');
+      router.replace(
+        `/mainDashboard?role=responder&towerId=${encodedTowerId}&towerName=${encodedTowerName}` as Href
+      );
+    },
+    [router, towerId, towerName]
+  );
+
+  const { connected } = useWebSocket(wsUrl, onMessage);
 
   useEffect(() => {
     let activeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -50,6 +69,9 @@ export default function Dashboard() {
       <Text style={styles.subtitle}>
         Connected to {towerName ?? 'control tower'}.
       </Text>
+      <Text style={styles.connection}>
+        {connected ? 'Listening for mission start...' : 'Connecting to sync channel...'}
+      </Text>
     </View>
   );
 }
@@ -71,6 +93,11 @@ const styles = StyleSheet.create({
   subtitle: {
     color: '#9ca3af',
     fontSize: 14,
+  },
+  connection: {
+    color: '#00E5FF',
+    fontSize: 12,
+    marginTop: 8,
   },
 });
 

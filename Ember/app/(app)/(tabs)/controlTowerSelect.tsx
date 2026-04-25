@@ -1,7 +1,7 @@
 // screens/ControlTowerSelect.tsx
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
   FlatList,
@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import Svg, { Circle, Defs, Line, Path, Pattern, Rect } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
+import { useWebSocket } from '@/hooks/websockets';
+import { getWebSocketUrl } from '@/hooks/get-websocket-url';
 
 const { width, height } = Dimensions.get('window');
 const TOWER_CHANNEL = 'tower-lobby';
@@ -29,12 +31,26 @@ export default function ControlTowerSelect() {
   const [availableTowers, setAvailableTowers] = useState<Tower[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [currentTower, setCurrentTower] = useState<Tower | null>(null);
+  const wsUrl = getWebSocketUrl();
 
   const selectedTower = useMemo(
     () => availableTowers.find((tower) => tower.id === selectedId) ?? null,
     [availableTowers, selectedId]
   );
+
+  const onMissionMessage = useCallback(
+    (msg: { type?: string; towerId?: string; towerName?: string }) => {
+      if (msg?.type !== 'mission_start' || !selectedTower) return;
+      if (msg.towerId && msg.towerId !== selectedTower.id) return;
+
+      const encodedId = encodeURIComponent(selectedTower.id);
+      const encodedName = encodeURIComponent(selectedTower.name);
+      router.replace(`/mainDashboard?role=responder&towerId=${encodedId}&towerName=${encodedName}` as Href);
+    },
+    [router, selectedTower]
+  );
+
+  useWebSocket(wsUrl, onMissionMessage);
 
   useEffect(() => {
     let activeChannel: ReturnType<typeof supabase.channel> | null = null;
@@ -118,25 +134,6 @@ export default function ControlTowerSelect() {
       }
     };
   }, []);
-
-  useEffect(() => {
-    const nextTower = selectedTower ?? null;
-    setCurrentTower(nextTower);
-  }, [selectedTower]);
-
-  useEffect(() => {
-    if (!currentTower) return;
-
-    const channel = supabase.getChannels().find((existing) => existing.topic === `realtime:${TOWER_CHANNEL}`);
-    if (!channel) return;
-
-    void channel.track({
-      role: 'responder',
-      towerId: currentTower.id,
-      towerName: currentTower.name,
-      updatedAt: new Date().toISOString(),
-    });
-  }, [currentTower]);
 
   const handleConnect = () => {
     if (!selectedTower) return;
