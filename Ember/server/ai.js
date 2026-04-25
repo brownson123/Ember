@@ -1,6 +1,11 @@
 const vision = require('@google-cloud/vision');
 
-const visionClient = new vision.ImageAnnotatorClient();
+let visionClient = null;
+try {
+  visionClient = new vision.ImageAnnotatorClient();
+} catch (err) {
+  console.warn('Google Vision client failed to initialize — image analysis disabled:', err.message);
+}
 
 const PROTOCOL_MAP = {
   chlorine: 'Evacuate 100m radius, deploy Level A protection, ventilate area.',
@@ -11,6 +16,7 @@ const PROTOCOL_MAP = {
 };
 
 async function cloudVisionAnalyze(imageBase64) {
+  if (!visionClient) throw new Error('Vision client not initialized');
   const request = {
     image: { content: imageBase64 },
     features: [
