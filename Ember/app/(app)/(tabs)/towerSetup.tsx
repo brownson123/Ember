@@ -12,6 +12,7 @@ import {
     View,
 } from 'react-native';
 import Svg, { Circle, Defs, Line, Path, Pattern, Rect } from 'react-native-svg';
+import { sendMeshFirst } from '@/lib/transportManager';
 import { wsManager } from '@/lib/webSocketManager';
 
 const { width, height } = Dimensions.get('window');
@@ -28,6 +29,12 @@ export default function TowerSetup() {
     // Register early so responders can already discover this tower as standing by.
     wsManager.send({
       type: 'tower_register',
+      towerId: normalizedTowerId,
+      towerName: cleanName,
+      missionActive: false,
+    });
+
+    sendMeshFirst('tower_announcement', {
       towerId: normalizedTowerId,
       towerName: cleanName,
       missionActive: false,

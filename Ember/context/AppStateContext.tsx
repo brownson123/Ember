@@ -5,8 +5,11 @@ export interface ChatMessage {
   sender: string;
   content: string;
   timestamp: number;
-  type?: 'chat_message' | 'hazard_report';
+  type?: 'chat_message' | 'hazard_report' | 'image';
   imageBase64?: string;
+  analysis?: string | null;
+  protocol?: string | null;
+  status?: 'pending' | 'approved' | 'denied' | null;
 }
 
 type AppTab = 'overview' | 'chat' | 'info';
@@ -43,6 +46,15 @@ type Action =
   | { type: 'HIDE_JOIN_REQUEST' }
   | { type: 'LOAD_MESSAGES'; payload: ChatMessage[] }
   | { type: 'SET_ACTIVE_TEAM'; payload: string[] }
+  | {
+      type: 'UPDATE_MESSAGE';
+      payload: {
+        id: string;
+        analysis?: string | null;
+        protocol?: string | null;
+        status?: 'pending' | 'approved' | 'denied' | null;
+      };
+    }
   | { type: 'CLEAR_MESSAGES' };
   
 
@@ -98,6 +110,13 @@ case 'HIDE_JOIN_REQUEST':
 case 'LOAD_MESSAGES':
   // Replace messages entirely (for late join)
   return { ...state, messages: action.payload };
+    case 'UPDATE_MESSAGE':
+      return {
+        ...state,
+        messages: state.messages.map((message) =>
+          message.id === action.payload.id ? { ...message, ...action.payload } : message
+        ),
+      };
     case 'SET_ACTIVE_TEAM':
       return { ...state, activeTeamEmails: action.payload };
     case 'MARK_CHAT_READ':

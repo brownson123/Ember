@@ -1,5 +1,6 @@
 import { useAppState, type ChatMessage } from '@/context/AppStateContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -8,7 +9,7 @@ import {
     View,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
-import { wsManager } from '../lib/webSocketManager';
+import { sendMeshFirst } from '@/lib/transportManager';
 
 interface ChatTabProps {
   isTower: boolean;
@@ -19,6 +20,15 @@ export default function ChatTab({ isTower }: ChatTabProps) {
   const [userEmail, setUserEmail] = useState<string>('');
   const { state } = useAppState();
 
+  const resizeForMesh = useCallback(async (uri: string) => {
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 200 } }],
+      { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+    return result.base64 ?? null;
+  }, []);
+
   // Get current user's email once
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -26,7 +36,7 @@ export default function ChatTab({ isTower }: ChatTabProps) {
     });
   }, []);
 
-  const pickImage = async () => {
+  const pickImage = useCallback(async () => {
     // Ask for camera permissions
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
@@ -41,43 +51,52 @@ export default function ChatTab({ isTower }: ChatTabProps) {
   
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const asset = result.assets[0];
-      const base64 = asset.base64;
+      let base64 = asset.base64;
+      if (asset.uri) {
+        base64 = await resizeForMesh(asset.uri);
+      }
       if (!base64) {
         alert('Unable to read image data. Please try again.');
         return;
       }
   
-      const message = {
-        type: 'hazard_report',
+      const payload = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         sender: userEmail || (await supabase.auth.getUser()).data.user?.email || 'Unknown',
         imageBase64: base64,
         timestamp: Date.now(),
       };
-      wsManager.send(message);
+      const message = {
+        type: 'hazard_report',
+        payload,
+      };
+      sendMeshFirst(message.type, message.payload);
     }
-  };
+  }, [resizeForMesh, userEmail]);
 
   // Send a new message (only sends, doesn't add locally)
   const sendMessage = useCallback(async () => {
     const content = input.trim();
     if (!content) return;
     const sender = userEmail || (await supabase.auth.getUser()).data.user?.email || 'Unknown';
-    const message = {
-      type: 'chat_message',
+    const payload = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sender,
       content,
       timestamp: Date.now(),
     };
-    wsManager.send(message);
+    const message = {
+      type: 'chat_message',
+      payload,
+    };
+    sendMeshFirst(message.type, message.payload);
     setInput('');
   }, [input, userEmail]);
 
   const renderItem = ({ item }: { item: ChatMessage }) => (
     <View style={styles.messageRow}>
       <View style={styles.avatar}>
-        <MaterialCommunityIcons name="account" size={24} color="#00E5FF" />
+        <MaterialCommunityIcons name={item.type === 'image' ? 'camera' : 'account'} size={24} color="#00E5FF" />
       </View>
       <View style={styles.bubble}>
         <Text style={styles.sender}>{item.sender}</Text>
@@ -89,6 +108,16 @@ export default function ChatTab({ isTower }: ChatTabProps) {
             resizeMode="cover"
           />
         )}
+        {item.analysis ? (
+          <View style={styles.analysisCard}>
+            <Text style={styles.analysisTitle}>AI Analysis</Text>
+            <Text style={styles.analysisText}>{item.analysis}</Text>
+            {item.protocol ? <Text style={styles.protocolText}>Protocol: {item.protocol}</Text> : null}
+            {item.status === 'pending' ? <Text style={styles.pendingText}>Pending approval</Text> : null}
+            {item.status === 'approved' ? <Text style={styles.approvedText}>Approved</Text> : null}
+            {item.status === 'denied' ? <Text style={styles.deniedText}>Denied</Text> : null}
+          </View>
+        ) : null}
         <Text style={styles.time}>
           {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
@@ -149,6 +178,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 8,
   },
+  analysisCard: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#2a3441',
+    borderRadius: 8,
+    padding: 8,
+    backgroundColor: '#0f1419',
+  },
+  analysisTitle: {
+    color: '#00E5FF',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  analysisText: { color: '#e5e7eb', fontSize: 12 },
+  protocolText: { color: '#f8fafc', fontSize: 12, marginTop: 6 },
+  pendingText: { color: '#fbbf24', fontSize: 12, marginTop: 6 },
+  approvedText: { color: '#4ade80', fontSize: 12, marginTop: 6 },
+  deniedText: { color: '#ef4444', fontSize: 12, marginTop: 6 },
   time: { color: '#6b7280', fontSize: 10, alignSelf: 'flex-end', marginTop: 4 },
   inputBar: {
     flexDirection: 'row', padding: 12, borderTopWidth: 1,

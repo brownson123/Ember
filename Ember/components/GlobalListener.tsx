@@ -1,13 +1,19 @@
 import { useEffect } from 'react';
 
 import { useAppState } from '@/context/AppStateContext';
+import { playAudioFromBase64Url, speakTextFallback } from '@/lib/audioPlayer';
+import { bridgefyManager } from '@/lib/bridgefyManager';
 import { wsManager } from '@/lib/webSocketManager';
 
 export default function GlobalListener() {
   const { dispatch } = useAppState();
 
   useEffect(() => {
-    const unsubscribe = wsManager.subscribe((data) => {
+    const handleIncoming = (incoming: any) => {
+      const data = incoming?.payload && incoming?.type
+        ? { type: incoming.type, ...incoming.payload }
+        : incoming;
+
       switch (data?.type) {
         case 'chat_message':
           dispatch({
@@ -28,15 +34,27 @@ export default function GlobalListener() {
             payload: {
               id: data.id,
               sender: data.sender ?? 'Unknown',
-              content: '[Hazard image uploaded]',
+              content: 'Hazard image captured. Analyzing...',
               timestamp: data.timestamp ?? Date.now(),
-              type: 'hazard_report',
+              type: 'image',
               imageBase64: data.imageBase64,
+              analysis: null,
+              protocol: null,
+              status: 'pending',
             },
           });
           break;
 
         case 'ai_recommendation':
+          dispatch({
+            type: 'UPDATE_MESSAGE',
+            payload: {
+              id: data.id,
+              analysis: data.analysis ?? '',
+              protocol: data.protocol ?? '',
+              status: data.status ?? 'pending',
+            },
+          });
           dispatch({
             type: 'ADD_RECOMMENDATION',
             payload: {
@@ -51,6 +69,16 @@ export default function GlobalListener() {
 
         case 'tower_list':
           // Tower discovery list is local to ControlTowerSelect.
+          break;
+
+        case 'voice_alert':
+          if (data?.audioUrl) {
+            playAudioFromBase64Url(data.audioUrl).catch(() => {
+              speakTextFallback(data?.text ?? 'New update from command');
+            });
+          } else {
+            speakTextFallback(data?.text ?? 'New update from command');
+          }
           break;
 
         case 'join_request_alert':
@@ -76,6 +104,13 @@ export default function GlobalListener() {
         case 'recommendation_approved':
         case 'recommendation_denied':
           dispatch({
+            type: 'UPDATE_MESSAGE',
+            payload: {
+              id: data.id,
+              status: data.type === 'recommendation_approved' ? 'approved' : 'denied',
+            },
+          });
+          dispatch({
             type: 'UPDATE_RECOMMENDATION',
             payload: {
               id: data.id,
@@ -87,9 +122,15 @@ export default function GlobalListener() {
         default:
           break;
       }
-    });
+    };
 
-    return unsubscribe;
+    const unsubscribeBridgefy = bridgefyManager.subscribe(handleIncoming);
+    const unsubscribeWs = wsManager.subscribe(handleIncoming);
+
+    return () => {
+      unsubscribeBridgefy();
+      unsubscribeWs();
+    };
   }, [dispatch]);
 
   return null;

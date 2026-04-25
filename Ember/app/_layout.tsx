@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import GlobalListener from '@/components/GlobalListener';
+import MeshProvider from '@/components/meshProvider';
 import { AppStateProvider } from '@/context/AppStateContext';
 import { getWebSocketUrl } from '@/hooks/get-websocket-url';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -21,15 +22,17 @@ export default function RootLayout() {
 
   return (
     <AppStateProvider>
-      <GlobalListener />
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(app)" />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
+      <MeshProvider>
+        <GlobalListener />
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(app)" />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </MeshProvider>
     </AppStateProvider>
   );
 }

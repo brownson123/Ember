@@ -12,6 +12,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import ChatTab from '@/components/chattab';
 import { useAppState } from '@/context/AppStateContext';
+import { sendMeshFirst } from '@/lib/transportManager';
 import { wsManager } from '@/lib/webSocketManager';
 
 type TabKey = 'overview' | 'chat' | 'info';
@@ -56,18 +57,17 @@ export default function MainDashboard() {
     const normalizedTowerId = (towerName ?? 'control-tower').toLowerCase().replace(/\s+/g, '-');
     const normalizedTowerName = towerName ?? 'Control Tower';
 
-    const registerTower = () => {
-      wsManager.send({
-        type: 'tower_register',
+    const announceTower = () => {
+      sendMeshFirst('tower_announcement', {
         towerId: normalizedTowerId,
         towerName: normalizedTowerName,
         missionActive: true,
       });
     };
 
-    // Register immediately, then keep alive in case of reconnect/server restart.
-    registerTower();
-    const intervalId = setInterval(registerTower, 5000);
+    // Announce immediately, then keep alive for late discoverers.
+    announceTower();
+    const intervalId = setInterval(announceTower, 5000);
 
     return () => clearInterval(intervalId);
   }, [isTower, towerName]);
@@ -210,11 +210,11 @@ export default function MainDashboard() {
                 <TouchableOpacity
                   style={[styles.modalButton, styles.denyButton]}
                   onPress={() => {
-                    wsManager.send({
-                      type: 'join_response',
+                    sendMeshFirst('join_denied', {
                       requestId: state.joinRequest?.requestId,
-                      accept: false,
+                      reason: 'Join request denied by control tower.',
                     });
+
                     dispatch({ type: 'HIDE_JOIN_REQUEST' });
                   }}
                 >
@@ -223,11 +223,13 @@ export default function MainDashboard() {
                 <TouchableOpacity
                   style={[styles.modalButton, styles.acceptButton]}
                   onPress={() => {
-                    wsManager.send({
-                      type: 'join_response',
-                      requestId: state.joinRequest?.requestId,
-                      accept: true,
+                    sendMeshFirst('mission_joined', {
+                      towerId: (towerName ?? 'control-tower').toLowerCase().replace(/\s+/g, '-'),
+                      towerName: towerName ?? 'Control Tower',
+                      messages: state.messages,
+                      teamEmails: state.activeTeamEmails,
                     });
+
                     dispatch({ type: 'HIDE_JOIN_REQUEST' });
                   }}
                 >

@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import Svg, { Circle, Defs, Line, Path, Pattern, Rect } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
+import { bridgefyManager } from '@/lib/bridgefyManager';
+import { sendMeshFirst } from '@/lib/transportManager';
 import { useAppState, type ChatMessage } from '@/context/AppStateContext';
 import { wsManager } from '@/lib/webSocketManager';
 
@@ -39,42 +41,62 @@ export default function ControlTowerSelect() {
   }, []);
 
   useEffect(() => {
-    const requestTowers = () => {
-      wsManager.send({ type: 'get_towers' });
-    };
-    requestTowers();
-    const pollId = setInterval(requestTowers, 4000);
-
-    const unsubscribe = wsManager.subscribe((data) => {
-      if (data?.type === 'tower_list') {
-        setAvailableTowers(data.towers ?? []);
-      }
-
-      if (data?.type === 'mission_joined') {
-        dispatch({ type: 'LOAD_MESSAGES', payload: (data.messages ?? []) as ChatMessage[] });
-        dispatch({ type: 'SET_ACTIVE_TEAM', payload: data.teamEmails ?? [] });
-        setJoiningTowerId(null);
-        const encodedName = encodeURIComponent(data.towerName ?? 'Control Tower');
-        const encodedId = encodeURIComponent(data.towerId ?? '');
-        router.replace(`/mainDashboard?role=responder&towerId=${encodedId}&towerName=${encodedName}` as Href);
-      }
-
-      if (data?.type === 'join_denied') {
-        setJoiningTowerId(null);
-        Alert.alert('Join Denied', data.reason ?? 'The control tower did not accept your request.');
+    const bridgefyUnsubscribe = bridgefyManager.subscribe((msg) => {
+      if (msg.type === 'tower_announcement') {
+        const tower = msg.payload;
+        if (!tower?.towerId || !tower?.towerName) return;
+        setAvailableTowers((prev) => {
+          const existing = prev.find((t) => t.id === tower.towerId);
+          if (existing) {
+            return prev.map((t) => t.id === tower.towerId ? {
+              ...t,
+              name: tower.towerName,
+              missionActive: Boolean(tower.missionActive),
+            } : t);
+          }
+          return [...prev, {
+            id: tower.towerId,
+            name: tower.towerName,
+            missionActive: Boolean(tower.missionActive),
+          }];
+        });
       }
     });
 
+    const processJoinLifecycle = (data: any) => {
+      if (!data) return;
+      const normalized = data?.payload && data?.type
+        ? { type: data.type, ...data.payload }
+        : data;
+
+      if (normalized?.type === 'mission_joined') {
+        dispatch({ type: 'LOAD_MESSAGES', payload: (normalized.messages ?? []) as ChatMessage[] });
+        dispatch({ type: 'SET_ACTIVE_TEAM', payload: normalized.teamEmails ?? [] });
+        setJoiningTowerId(null);
+        const encodedName = encodeURIComponent(normalized.towerName ?? 'Control Tower');
+        const encodedId = encodeURIComponent(normalized.towerId ?? '');
+        router.replace(`/mainDashboard?role=responder&towerId=${encodedId}&towerName=${encodedName}` as Href);
+      }
+
+      if (normalized?.type === 'join_denied') {
+        setJoiningTowerId(null);
+        Alert.alert('Join Denied', normalized.reason ?? 'The control tower did not accept your request.');
+      }
+    };
+
+    const bridgefyJoinUnsubscribe = bridgefyManager.subscribe(processJoinLifecycle);
+    const wsUnsubscribe = wsManager.subscribe(processJoinLifecycle);
+
     return () => {
-      clearInterval(pollId);
-      unsubscribe();
+      bridgefyUnsubscribe();
+      bridgefyJoinUnsubscribe();
+      wsUnsubscribe();
     };
   }, [dispatch, router]);
 
   const handleJoinMission = (tower: Tower) => {
     setJoiningTowerId(tower.id);
-    wsManager.send({
-      type: 'join_request',
+    sendMeshFirst('join_request', {
       towerId: tower.id,
       responderEmail: userEmail,
     });

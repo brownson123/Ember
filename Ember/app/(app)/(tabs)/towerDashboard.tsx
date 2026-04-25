@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useWebSocket } from '@/hooks/websockets';
+import { sendMeshFirst } from '@/lib/transportManager';
 import { supabase } from '@/lib/supabase';
 import { getWebSocketUrl } from '@/hooks/get-websocket-url';
 
@@ -83,6 +84,12 @@ export default function TowerDashboard() {
   }, [label, resolvedTowerId]);
 
   const handleStartMission = () => {
+    sendMeshFirst('tower_announcement', {
+      towerId: resolvedTowerId,
+      towerName: label,
+      missionActive: true,
+    });
+
     send({
       type: 'tower_register',
       towerId: resolvedTowerId,
