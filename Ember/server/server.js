@@ -1,8 +1,11 @@
 const WebSocket = require('ws');
-const ElevenLabs = require('elevenlabs-node');
-
 const { cloudVisionAnalyze, lookupProtocol, gemmaOfflineAnalysis } = require('./ai');
 const { createThread, addMessage, getThreadSummary } = require('./backboard');
+
+// Prevent gRPC/auth async errors from crashing the process when credentials are missing
+process.on('unhandledRejection', (err) => {
+  console.warn('Unhandled rejection (suppressed):', err?.message ?? err);
+});
 
 const PORT = Number(process.env.WS_PORT || 8089);
 const wss = new WebSocket.Server({ port: PORT });
@@ -17,10 +20,6 @@ const joinRequests = new Map(); // requestId -> { fromResponderWs, towerId, resp
 const missionTeams = new Map(); // towerId -> Set<responderEmail>
 const activeRecommendations = new Map(); // recId -> { analysis, protocol }
 const threadByTower = new Map(); // towerId -> threadId
-
-const elevenLabs = new ElevenLabs({
-  apiKey: ELEVENLABS_API_KEY,
-});
 
 function sendTo(ws, data) {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -40,18 +39,25 @@ async function generateVoiceAlert(text) {
   }
 
   const voiceId = '21m00Tcm4TlvDq8ikWAM';
-  const response = await elevenLabs.textToSpeech({
-    text,
-    voice_id: voiceId,
-    model_id: 'eleven_multilingual_v2',
-    voice_settings: {
-      stability: 0.5,
-      similarity_boost: 0.8,
+  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.5, similarity_boost: 0.8 },
+    }),
   });
 
-  const audioBase64 = Buffer.from(response).toString('base64');
-  return `data:audio/mpeg;base64,${audioBase64}`;
+  if (!response.ok) {
+    throw new Error(`ElevenLabs API error: ${response.status} ${await response.text()}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return `data:audio/mpeg;base64,${buffer.toString('base64')}`;
 }
 
 wss.on('connection', (ws) => {
@@ -85,7 +91,7 @@ wss.on('connection', (ws) => {
           summary = `Detected: ${text || objects.join(', ') || 'Unknown hazard'}`;
           protocol = lookupProtocol(objects, text);
         } catch (err) {
-          console.log('Cloud Vision unavailable, switching to offline fallback');
+          console.log('Cloud Vision unavailable, switching to offline fallback:', err.message);
           protocol = await gemmaOfflineAnalysis('', ['unknown']);
           summary = 'Offline analysis: unknown hazard';
         }
