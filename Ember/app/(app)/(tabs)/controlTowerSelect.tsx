@@ -41,6 +41,9 @@ export default function ControlTowerSelect() {
   }, []);
 
   useEffect(() => {
+    // Ask the server for already-registered towers on mount
+    wsManager.send({ type: 'get_towers' });
+
     const bridgefyUnsubscribe = bridgefyManager.subscribe((msg) => {
       if (msg.type === 'tower_announcement') {
         const tower = msg.payload;
@@ -68,6 +71,27 @@ export default function ControlTowerSelect() {
       const normalized = data?.payload && data?.type
         ? { type: data.type, ...data.payload }
         : data;
+
+      if (normalized?.type === 'tower_list') {
+        const list = (normalized.towers ?? []).map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          missionActive: Boolean(t.missionActive),
+        }));
+        setAvailableTowers(list);
+        return;
+      }
+
+      if (normalized?.type === 'mission_start') {
+        setAvailableTowers((prev) => {
+          const existing = prev.find((t) => t.id === normalized.towerId);
+          if (existing) {
+            return prev.map((t) => t.id === normalized.towerId ? { ...t, missionActive: true } : t);
+          }
+          return [...prev, { id: normalized.towerId, name: normalized.towerName, missionActive: true }];
+        });
+        return;
+      }
 
       if (normalized?.type === 'mission_joined') {
         dispatch({ type: 'LOAD_MESSAGES', payload: (normalized.messages ?? []) as ChatMessage[] });
