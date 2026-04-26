@@ -1,7 +1,7 @@
 const vision = require('@google-cloud/vision');
 const backboard = require('./backboard');
 
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma3:12b';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'gemma4';
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 
 const fs = require('fs');

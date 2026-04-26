@@ -25,11 +25,10 @@ function hashToAngle(key: string) {
   return (hash % 360) * (Math.PI / 180);
 }
 
-// TEMP: pings are pinned to green while signal-quality calculation is being
-// reworked (laptop-port testing currently produces low/medium scores). Restore
-// the threshold logic when the underlying quality metric is reliable.
-function qualityColor(_quality: number) {
-  return '#4ade80';
+function qualityColor(quality: number) {
+  if (quality >= 70) return '#4ade80';
+  if (quality >= 40) return '#fbbf24';
+  return '#ef4444';
 }
 
 export default function SonarTab() {
