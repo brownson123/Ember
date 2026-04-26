@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { sendMeshFirst } from '@/lib/transportManager';
+import { wsManager } from '@/lib/webSocketManager';
+import { useLocalSearchParams } from 'expo-router';
 
 interface ChatTabProps {
   isTower: boolean;
@@ -19,6 +21,7 @@ export default function ChatTab({ isTower }: ChatTabProps) {
   const [input, setInput] = useState('');
   const [userEmail, setUserEmail] = useState<string>('');
   const { state } = useAppState();
+  const { towerId } = useLocalSearchParams<{ towerId?: string }>();
 
   const resizeForMesh = useCallback(async (uri: string) => {
     const result = await ImageManipulator.manipulateAsync(
@@ -29,10 +32,12 @@ export default function ChatTab({ isTower }: ChatTabProps) {
     return result.base64 ?? null;
   }, []);
 
-  // Get current user's email once
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email ?? 'Unknown');
+      const name = data.user?.user_metadata?.display_name
+        || data.user?.email?.split('@')[0]
+        || 'Unknown';
+      setUserEmail(name);
     });
   }, []);
 
@@ -60,9 +65,19 @@ export default function ChatTab({ isTower }: ChatTabProps) {
         return;
       }
   
+      // Guard: reject images over ~200KB base64 (~150KB binary) to avoid crashing native WebSocket clients
+      if (base64 && base64.length > 200_000) {
+        alert('Image is too large to send over the mesh. Please try a smaller image.');
+        return;
+      }
+
+      const { data: freshUser } = await supabase.auth.getUser();
       const payload = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        sender: userEmail || (await supabase.auth.getUser()).data.user?.email || 'Unknown',
+        sender: freshUser.user?.user_metadata?.display_name
+          || freshUser.user?.email?.split('@')[0]
+          || userEmail
+          || 'Unknown',
         imageBase64: base64,
         timestamp: Date.now(),
       };
@@ -78,7 +93,11 @@ export default function ChatTab({ isTower }: ChatTabProps) {
   const sendMessage = useCallback(async () => {
     const content = input.trim();
     if (!content) return;
-    const sender = userEmail || (await supabase.auth.getUser()).data.user?.email || 'Unknown';
+    const { data: freshUser } = await supabase.auth.getUser();
+    const sender = freshUser.user?.user_metadata?.display_name
+      || freshUser.user?.email?.split('@')[0]
+      || userEmail
+      || 'Unknown';
     const payload = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sender,
@@ -101,6 +120,28 @@ export default function ChatTab({ isTower }: ChatTabProps) {
       <View style={styles.bubble}>
         <Text style={styles.sender}>{item.sender}</Text>
         <Text style={styles.content}>{item.content}</Text>
+            {isTower && item.type === 'chat_message' && !item.status && (
+              <View style={styles.approvalButtons}>
+                <TouchableOpacity
+                  style={[styles.approvalBtn, styles.approvalDeny]}
+                  onPress={() => wsManager.send({ type: 'message_approval', action: 'deny', messageId: item.id, content: item.content, sender: item.sender })}
+                >
+                  <Text style={styles.approvalBtnText}>Deny</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.approvalBtn, styles.approvalApprove]}
+                  onPress={() => wsManager.send({ type: 'message_approval', action: 'approve', messageId: item.id, content: item.content, sender: item.sender })}
+                >
+                  <Text style={styles.approvalBtnText}>Approve</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {isTower && item.type === 'chat_message' && item.status === 'approved' && (
+              <Text style={styles.approvedText}>Added to mission briefing</Text>
+            )}
+            {isTower && item.type === 'chat_message' && item.status === 'denied' && (
+              <Text style={styles.deniedText}>Excluded</Text>
+            )}
         {item.imageBase64 && (
           <Image
             source={{ uri: `data:image/jpeg;base64,${item.imageBase64}` }}
@@ -116,6 +157,22 @@ export default function ChatTab({ isTower }: ChatTabProps) {
             {item.status === 'pending' ? <Text style={styles.pendingText}>Pending approval</Text> : null}
             {item.status === 'approved' ? <Text style={styles.approvedText}>Approved</Text> : null}
             {item.status === 'denied' ? <Text style={styles.deniedText}>Denied</Text> : null}
+            {isTower && item.status === 'pending' && (
+              <View style={styles.approvalButtons}>
+                <TouchableOpacity
+                  style={[styles.approvalBtn, styles.approvalDeny]}
+                  onPress={() => wsManager.send({ type: 'recommendation_action', action: 'deny', recommendationId: item.id, towerId })}
+                >
+                  <Text style={styles.approvalBtnText}>Deny</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.approvalBtn, styles.approvalApprove]}
+                  onPress={() => wsManager.send({ type: 'recommendation_action', action: 'approve', recommendationId: item.id, towerId })}
+                >
+                  <Text style={styles.approvalBtnText}>Approve</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : null}
         <Text style={styles.time}>
@@ -197,6 +254,11 @@ const styles = StyleSheet.create({
   pendingText: { color: '#fbbf24', fontSize: 12, marginTop: 6 },
   approvedText: { color: '#4ade80', fontSize: 12, marginTop: 6 },
   deniedText: { color: '#ef4444', fontSize: 12, marginTop: 6 },
+  approvalButtons: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  approvalBtn: { flex: 1, borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
+  approvalApprove: { backgroundColor: '#00E5FF' },
+  approvalDeny: { backgroundColor: '#ef4444' },
+  approvalBtnText: { color: '#0B0E14', fontWeight: '700', fontSize: 13 },
   time: { color: '#6b7280', fontSize: 10, alignSelf: 'flex-end', marginTop: 4 },
   inputBar: {
     flexDirection: 'row', padding: 12, borderTopWidth: 1,

@@ -1,5 +1,16 @@
 // lib/bridgefyManager.ts
-import Bridgefy, { BridgefyEvents, BridgefyPropagationProfile } from 'bridgefy-react-native';
+let Bridgefy: any = null;
+let BridgefyEvents: any = null;
+let BridgefyPropagationProfile: any = null;
+
+try {
+  const mod = require('bridgefy-react-native');
+  Bridgefy = mod.default;
+  BridgefyEvents = mod.BridgefyEvents;
+  BridgefyPropagationProfile = mod.BridgefyPropagationProfile;
+} catch (_e) {
+  console.warn('Bridgefy native module unavailable — mesh networking disabled.');
+}
 
 type BridgefyMessageHandler = (message: {
   type: string;

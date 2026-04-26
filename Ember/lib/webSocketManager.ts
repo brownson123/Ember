@@ -54,8 +54,8 @@ class WebSocketManager {
       this.reconnectTimer = setTimeout(() => this.connect(url), 3000);
     };
 
-    this.ws.onerror = (error) => {
-      console.error('WebSocket error', error);
+    this.ws.onerror = () => {
+      console.warn('WebSocket connection error');
     };
   }
 

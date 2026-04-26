@@ -41,6 +41,9 @@ export default function ControlTowerSelect() {
   }, []);
 
   useEffect(() => {
+    // Ask the server for already-registered towers on mount
+    wsManager.send({ type: 'get_towers' });
+
     const bridgefyUnsubscribe = bridgefyManager.subscribe((msg) => {
       if (msg.type === 'tower_announcement') {
         const tower = msg.payload;
@@ -69,6 +72,27 @@ export default function ControlTowerSelect() {
         ? { type: data.type, ...data.payload }
         : data;
 
+      if (normalized?.type === 'tower_list') {
+        const list = (normalized.towers ?? []).map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          missionActive: Boolean(t.missionActive),
+        }));
+        setAvailableTowers(list);
+        return;
+      }
+
+      if (normalized?.type === 'mission_start') {
+        setAvailableTowers((prev) => {
+          const existing = prev.find((t) => t.id === normalized.towerId);
+          if (existing) {
+            return prev.map((t) => t.id === normalized.towerId ? { ...t, missionActive: true } : t);
+          }
+          return [...prev, { id: normalized.towerId, name: normalized.towerName, missionActive: true }];
+        });
+        return;
+      }
+
       if (normalized?.type === 'mission_joined') {
         dispatch({ type: 'LOAD_MESSAGES', payload: (normalized.messages ?? []) as ChatMessage[] });
         dispatch({ type: 'SET_ACTIVE_TEAM', payload: normalized.teamEmails ?? [] });
@@ -94,11 +118,15 @@ export default function ControlTowerSelect() {
     };
   }, [dispatch, router]);
 
-  const handleJoinMission = (tower: Tower) => {
+  const handleJoinMission = async (tower: Tower) => {
     setJoiningTowerId(tower.id);
+    const { data } = await supabase.auth.getUser();
+    const name = data.user?.user_metadata?.display_name
+      || data.user?.email?.split('@')[0]
+      || userEmail;
     sendMeshFirst('join_request', {
       towerId: tower.id,
-      responderEmail: userEmail,
+      responderEmail: name,
     });
   };
 
@@ -185,6 +213,16 @@ export default function ControlTowerSelect() {
           }
         />
 
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={async () => {
+            await supabase.auth.signOut();
+            router.replace('/(auth)/login' as Href);
+          }}
+        >
+          <MaterialCommunityIcons name="logout" size={16} color="#ef4444" />
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -344,6 +382,18 @@ const styles = StyleSheet.create({
   },
   connectingText: {
     color: '#0B0E14',
+    fontWeight: '600',
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 16,
+  },
+  signOutText: {
+    color: '#ef4444',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

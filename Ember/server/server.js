@@ -1,8 +1,13 @@
-const WebSocket = require('ws');
-const ElevenLabs = require('elevenlabs-node');
+require('dotenv').config({ path: require('path').join(__dirname, '../.env.local') });
 
-const { cloudVisionAnalyze, lookupProtocol, gemmaOfflineAnalysis } = require('./ai');
+const WebSocket = require('ws');
+const { cloudVisionAnalyze, lookupProtocol, gemmaOfflineAnalysis, generateMissionInfo } = require('./ai');
 const { createThread, addMessage, getThreadSummary } = require('./backboard');
+
+// Prevent gRPC/auth async errors from crashing the process when credentials are missing
+process.on('unhandledRejection', (err) => {
+  console.warn('Unhandled rejection (suppressed):', err?.message ?? err);
+});
 
 const PORT = Number(process.env.WS_PORT || 8089);
 const wss = new WebSocket.Server({ port: PORT });
@@ -17,10 +22,7 @@ const joinRequests = new Map(); // requestId -> { fromResponderWs, towerId, resp
 const missionTeams = new Map(); // towerId -> Set<responderEmail>
 const activeRecommendations = new Map(); // recId -> { analysis, protocol }
 const threadByTower = new Map(); // towerId -> threadId
-
-const elevenLabs = new ElevenLabs({
-  apiKey: ELEVENLABS_API_KEY,
-});
+const approvedContext = []; // approved messages and recommendations for mission briefing
 
 function sendTo(ws, data) {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -39,19 +41,26 @@ async function generateVoiceAlert(text) {
     throw new Error('Missing ElevenLabs API key');
   }
 
-  const voiceId = '21m00Tcm4TlvDq8ikWAM';
-  const response = await elevenLabs.textToSpeech({
-    text,
-    voice_id: voiceId,
-    model_id: 'eleven_multilingual_v2',
-    voice_settings: {
-      stability: 0.5,
-      similarity_boost: 0.8,
+  const voiceId = 'JBFqnCBsd6RMkjVDRZzb';
+  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json',
     },
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.5, similarity_boost: 0.8 },
+    }),
   });
 
-  const audioBase64 = Buffer.from(response).toString('base64');
-  return `data:audio/mpeg;base64,${audioBase64}`;
+  if (!response.ok) {
+    throw new Error(`ElevenLabs API error: ${response.status} ${await response.text()}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return `data:audio/mpeg;base64,${buffer.toString('base64')}`;
 }
 
 wss.on('connection', (ws) => {
@@ -85,7 +94,7 @@ wss.on('connection', (ws) => {
           summary = `Detected: ${text || objects.join(', ') || 'Unknown hazard'}`;
           protocol = lookupProtocol(objects, text);
         } catch (err) {
-          console.log('Cloud Vision unavailable, switching to offline fallback');
+          console.log('Cloud Vision unavailable, switching to offline fallback:', err.message);
           protocol = await gemmaOfflineAnalysis('', ['unknown']);
           summary = 'Offline analysis: unknown hazard';
         }
@@ -120,7 +129,12 @@ wss.on('connection', (ws) => {
       case 'recommendation_action': {
         if (msg.action === 'approve') {
           const approvedRec = activeRecommendations.get(msg.recommendationId);
-          if (approvedRec) {
+          if (approvedRec && !approvedContext.some(i => i.id === msg.recommendationId)) {
+            approvedContext.push({ type: 'hazard', id: msg.recommendationId, ...approvedRec });
+            generateMissionInfo(approvedContext).then(missionInfo => {
+              broadcast({ type: 'mission_info_update', missionInfo });
+            });
+
             try {
               const audioUrl = await generateVoiceAlert(approvedRec.protocol);
               broadcast({
@@ -162,6 +176,17 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'message_approval': {
+        if (msg.action === 'approve' && !approvedContext.some(i => i.id === msg.messageId)) {
+          approvedContext.push({ type: 'intel', id: msg.messageId, content: msg.content, sender: msg.sender });
+          generateMissionInfo(approvedContext).then(missionInfo => {
+            broadcast({ type: 'mission_info_update', missionInfo });
+          });
+        }
+        broadcast({ type: 'message_approval_update', messageId: msg.messageId, action: msg.action });
+        break;
+      }
+
       case 'mission_start': {
         const existing = towers.get(msg.towerId) || { name: msg.towerName, ws };
         towers.set(msg.towerId, {
@@ -170,9 +195,10 @@ wss.on('connection', (ws) => {
           ws,
           missionActive: true,
         });
-        if (!missionTeams.has(msg.towerId)) {
-          missionTeams.set(msg.towerId, new Set());
-        }
+        missionTeams.set(msg.towerId, new Set());
+        chatHistory.length = 0;
+        activeRecommendations.clear();
+        approvedContext.length = 0;
         broadcast(msg);
         broadcast({
           type: 'team_update',

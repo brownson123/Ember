@@ -5,6 +5,7 @@ import { useWebSocket } from '@/hooks/websockets';
 import { sendMeshFirst } from '@/lib/transportManager';
 import { supabase } from '@/lib/supabase';
 import { getWebSocketUrl } from '@/hooks/get-websocket-url';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const TOWER_CHANNEL = 'tower-lobby';
 
@@ -117,6 +118,16 @@ export default function TowerDashboard() {
       <TouchableOpacity style={styles.startButton} onPress={handleStartMission}>
         <Text style={styles.startButtonText}>Start Mission</Text>
       </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.signOutButton}
+        onPress={async () => {
+          await supabase.auth.signOut();
+          router.replace('/(auth)/login' as Href);
+        }}
+      >
+        <MaterialCommunityIcons name="logout" size={16} color="#ef4444" />
+        <Text style={styles.signOutText}>Sign Out</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -133,4 +144,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   startButtonText: { color: '#0B0E14', fontSize: 18, fontWeight: '700' },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 24,
+  },
+  signOutText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
 });

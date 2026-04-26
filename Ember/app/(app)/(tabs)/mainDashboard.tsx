@@ -9,8 +9,9 @@ import {
   Modal,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import ChatTab from '@/components/chattab';
+import { supabase } from '@/lib/supabase';
 import { useAppState } from '@/context/AppStateContext';
 import { sendMeshFirst } from '@/lib/transportManager';
 import { wsManager } from '@/lib/webSocketManager';
@@ -21,6 +22,16 @@ export default function MainDashboard() {
   const { role, towerName } = useLocalSearchParams<{ role?: string; towerName?: string }>();
   const isTower = role === 'tower';
   const { state, dispatch } = useAppState();
+  const router = useRouter();
+
+  const handleExitMission = () => {
+    router.replace(isTower ? '/towerSetup' as Href : '/controlTowerSelect' as Href);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.replace('/(auth)/login' as Href);
+  };
   const activeTab = state.activeTab as TabKey;
 
   const subtitle = useMemo(() => {
@@ -28,17 +39,13 @@ export default function MainDashboard() {
     return `Connected to ${towerName ?? 'control tower'}`;
   }, [isTower, towerName]);
 
-  const pendingRequests = useMemo(
-    () => [
-      { id: '1', title: 'Supply route change', status: 'Pending approval' },
-      { id: '2', title: 'Protocol delta-4', status: 'Pending approval' },
-    ],
-    []
-  );
-
-  const setActiveTab = (tab: TabKey) => {
+const setActiveTab = (tab: TabKey) => {
     dispatch({ type: 'SET_ACTIVE_TAB', payload: tab });
   };
+
+  useEffect(() => {
+    dispatch({ type: 'SET_ROLE', payload: isTower ? 'tower' : 'responder' });
+  }, [isTower, dispatch]);
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -105,6 +112,16 @@ export default function MainDashboard() {
                 ))
               )}
             </View>
+
+            <TouchableOpacity style={styles.exitButton} onPress={handleExitMission}>
+              <MaterialCommunityIcons name="exit-run" size={18} color="#fbbf24" />
+              <Text style={styles.exitButtonText}>Exit Mission</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+              <MaterialCommunityIcons name="logout" size={18} color="#ef4444" />
+              <Text style={styles.signOutButtonText}>Sign Out</Text>
+            </TouchableOpacity>
           </>
         )}
 
@@ -113,27 +130,52 @@ export default function MainDashboard() {
         {activeTab === 'info' && (
           <ScrollView contentContainerStyle={styles.infoContainer}>
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Incident Brief</Text>
+              <View style={styles.teamHeader}>
+                <MaterialCommunityIcons name="shield-alert" size={18} color={
+                  !state.missionInfo ? '#6b7280'
+                  : state.missionInfo.riskLevel === 'High' ? '#ef4444'
+                  : state.missionInfo.riskLevel === 'Moderate' ? '#fbbf24'
+                  : '#4ade80'
+                } />
+                <Text style={styles.panelTitle}>
+                  Risk Level: {state.missionInfo?.riskLevel ?? 'Unknown'}
+                </Text>
+              </View>
               <Text style={styles.panelText}>
-                This is the shared mission surface. Map and AI modules can be layered in next.
+                {state.missionInfo?.summary ?? 'No confirmed intelligence yet. Awaiting tower approvals.'}
               </Text>
             </View>
 
-            {isTower ? (
+            {(state.missionInfo?.hazards?.length ?? 0) > 0 && (
               <View style={styles.panel}>
-                <Text style={styles.panelTitle}>Pending Requests</Text>
-                {pendingRequests.map((request) => (
-                  <View key={request.id} style={styles.requestRow}>
-                    <Text style={styles.requestTitle}>{request.title}</Text>
-                    <Text style={styles.requestStatus}>{request.status}</Text>
+                <Text style={styles.panelTitle}>Confirmed Hazards</Text>
+                {state.missionInfo!.hazards.map((h, i) => (
+                  <View key={i} style={styles.requestRow}>
+                    <Text style={styles.requestTitle}>{h.analysis}</Text>
+                    <Text style={styles.requestStatus}>{h.protocol}</Text>
                   </View>
                 ))}
               </View>
-            ) : (
+            )}
+
+            {(state.missionInfo?.intel?.length ?? 0) > 0 && (
               <View style={styles.panel}>
-                <Text style={styles.panelTitle}>Approvals</Text>
+                <Text style={styles.panelTitle}>Field Intelligence</Text>
+                {state.missionInfo!.intel.map((item, i) => (
+                  <View key={i} style={styles.requestRow}>
+                    <Text style={styles.requestStatus}>{item.sender}</Text>
+                    <Text style={styles.requestTitle}>{item.content}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {!state.missionInfo && (
+              <View style={styles.panel}>
                 <Text style={styles.panelText}>
-                  Approvals are managed by control tower. Responders receive status updates only.
+                  {isTower
+                    ? 'Approve messages and hazard reports in the Chat tab to build the mission briefing.'
+                    : 'The mission briefing will appear here as the tower approves field reports.'}
                 </Text>
               </View>
             )}
@@ -210,11 +252,11 @@ export default function MainDashboard() {
                 <TouchableOpacity
                   style={[styles.modalButton, styles.denyButton]}
                   onPress={() => {
-                    sendMeshFirst('join_denied', {
+                    wsManager.send({
+                      type: 'join_response',
                       requestId: state.joinRequest?.requestId,
-                      reason: 'Join request denied by control tower.',
+                      accept: false,
                     });
-
                     dispatch({ type: 'HIDE_JOIN_REQUEST' });
                   }}
                 >
@@ -223,13 +265,11 @@ export default function MainDashboard() {
                 <TouchableOpacity
                   style={[styles.modalButton, styles.acceptButton]}
                   onPress={() => {
-                    sendMeshFirst('mission_joined', {
-                      towerId: (towerName ?? 'control-tower').toLowerCase().replace(/\s+/g, '-'),
-                      towerName: towerName ?? 'Control Tower',
-                      messages: state.messages,
-                      teamEmails: state.activeTeamEmails,
+                    wsManager.send({
+                      type: 'join_response',
+                      requestId: state.joinRequest?.requestId,
+                      accept: true,
                     });
-
                     dispatch({ type: 'HIDE_JOIN_REQUEST' });
                   }}
                 >
@@ -305,6 +345,38 @@ const styles = StyleSheet.create({
     color: '#e5e7eb',
     fontSize: 13,
     marginBottom: 4,
+  },
+  exitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#fbbf24',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  exitButtonText: {
+    color: '#fbbf24',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  signOutButtonText: {
+    color: '#ef4444',
+    fontWeight: '600',
+    fontSize: 14,
   },
   infoContainer: {
     paddingBottom: 16,

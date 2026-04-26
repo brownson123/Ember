@@ -6,7 +6,7 @@ import { bridgefyManager } from '@/lib/bridgefyManager';
 import { wsManager } from '@/lib/webSocketManager';
 
 export default function GlobalListener() {
-  const { dispatch } = useAppState();
+  const { dispatch, state } = useAppState();
 
   useEffect(() => {
     const handleIncoming = (incoming: any) => {
@@ -71,7 +71,20 @@ export default function GlobalListener() {
           // Tower discovery list is local to ControlTowerSelect.
           break;
 
+        case 'mission_info_update':
+          dispatch({ type: 'SET_MISSION_INFO', payload: data.missionInfo });
+          dispatch({ type: 'MARK_INFO_READ' });
+          break;
+
+        case 'message_approval_update':
+          dispatch({
+            type: 'UPDATE_MESSAGE',
+            payload: { id: data.messageId, status: data.action === 'approve' ? 'approved' : 'denied' },
+          });
+          break;
+
         case 'voice_alert':
+          if (state.role === 'tower') break;
           if (data?.audioUrl) {
             playAudioFromBase64Url(data.audioUrl).catch(() => {
               speakTextFallback(data?.text ?? 'New update from command');
