@@ -1,8 +1,18 @@
-require('dotenv').config({ path: require('path').join(__dirname, '../.env.local') });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const WebSocket = require('ws');
-const { cloudVisionAnalyze, lookupProtocol, gemmaOfflineAnalysis, generateMissionInfo } = require('./ai');
-const { createThread, addMessage, getThreadSummary } = require('./backboard');
+const {
+  cloudVisionAnalyze,
+  lookupProtocol,
+  gemmaOfflineAnalysis,
+  generateMissionInfo,
+  analyzeChatForMissionIntel,
+  analyzeHazardFromVisionTags,
+} = require('./ai');
+const backboard = require('./backboard');
+const { createThread, addMessage, getThreadSummary } = backboard;
 
 // Prevent gRPC/auth async errors from crashing the process when credentials are missing
 process.on('unhandledRejection', (err) => {
@@ -15,6 +25,29 @@ const ELEVENLABS_API_KEY =
   process.env.ELEVENLABS_API_KEY || process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY;
 
 console.log(`WebSocket server listening on ws://localhost:${PORT}`);
+
+// Probe Backboard once at boot. If healthy, it becomes the primary AI for chat-intel
+// and hazard analysis. If unhealthy (no credits, no internet, billing exhausted, etc.),
+// we mark it unavailable and skip it on every subsequent request until the periodic
+// health monitor brings it back. Per-call failures during runtime also flip the flag,
+// so a mid-mission internet drop falls over to Gemma immediately.
+if (backboard.isConfigured()) {
+  console.log('Backboard: configured, running startup health probe...');
+  backboard.healthCheck().then((ok) => {
+    if (ok) {
+      console.log('Backboard: PRIMARY AI online.');
+    } else {
+      const h = backboard.getHealth();
+      console.log(`Backboard: PRIMARY unavailable. Falling back to Gemma. Reason: ${h.lastError}`);
+    }
+    backboard.startHealthMonitor({ intervalMs: 5 * 60 * 1000 });
+  }).catch((err) => {
+    console.warn('Backboard: startup probe error:', err.message);
+    backboard.startHealthMonitor({ intervalMs: 5 * 60 * 1000 });
+  });
+} else {
+  console.log('Backboard: not configured — using Gemma as primary AI.');
+}
 
 const towers = new Map(); // towerId -> { name, ws, missionActive }
 const chatHistory = []; // all chat messages since mission start
@@ -77,33 +110,78 @@ wss.on('connection', (ws) => {
     console.log('Received:', msg.type, 'from', msg.sender || msg.towerId);
 
     switch (msg.type) {
-      case 'chat_message':
+      case 'chat_message': {
         chatHistory.push(msg);
         broadcast(msg);
+
+        (async () => {
+          try {
+            if (activeRecommendations.has(msg.id)) return;
+            const backboardThreadId = threadByTower.get(msg.towerId);
+            const intel = await analyzeChatForMissionIntel(msg.content, msg.sender, { backboardThreadId });
+            if (!intel.worthTracking) {
+              console.log(`Chat intel: skipped (not mission-relevant) — "${msg.content?.slice(0, 80)}"`);
+              return;
+            }
+
+            console.log(`Chat intel: recommendation queued — ${intel.analysis}`);
+
+            const recommendation = {
+              type: 'ai_recommendation',
+              id: msg.id,
+              source: 'chat_intel',
+              analysis: intel.analysis,
+              protocol: intel.protocol,
+              status: 'pending',
+              timestamp: Date.now(),
+            };
+
+            activeRecommendations.set(msg.id, {
+              analysis: recommendation.analysis,
+              protocol: recommendation.protocol,
+            });
+            chatHistory.push(recommendation);
+            broadcast(recommendation);
+
+            const threadId = threadByTower.get(msg.towerId);
+            if (threadId) {
+              try {
+                await addMessage(threadId, recommendation);
+              } catch (err) {
+                console.error('Backboard log error:', err.message);
+              }
+            }
+          } catch (err) {
+            console.warn('Chat intel pipeline error:', err.message);
+          }
+        })();
         break;
+      }
 
       case 'hazard_report': {
         chatHistory.push(msg);
         broadcast(msg);
 
-        let summary = '';
-        let protocol = '';
-
+        let visionText = '';
+        let visionObjects = [];
         try {
-          const { text, objects } = await cloudVisionAnalyze(msg.imageBase64);
-          summary = `Detected: ${text || objects.join(', ') || 'Unknown hazard'}`;
-          protocol = lookupProtocol(objects, text);
+          const v = await cloudVisionAnalyze(msg.imageBase64);
+          visionText = v.text || '';
+          visionObjects = v.objects || [];
+          console.log(`Vision: text="${visionText.slice(0, 80)}" objects=[${visionObjects.join(', ')}]`);
         } catch (err) {
-          console.log('Cloud Vision unavailable, switching to offline fallback:', err.message);
-          protocol = await gemmaOfflineAnalysis('', ['unknown']);
-          summary = 'Offline analysis: unknown hazard';
+          console.log('Cloud Vision unavailable, AI will analyze without tags:', err.message);
         }
+
+        const backboardThreadId = threadByTower.get(msg.towerId);
+        const intel = await analyzeHazardFromVisionTags(visionText, visionObjects, { backboardThreadId });
 
         const recommendation = {
           type: 'ai_recommendation',
           id: msg.id,
-          analysis: summary,
-          protocol,
+          analysis: intel.analysis,
+          protocol: intel.protocol,
+          riskLevel: intel.riskLevel,
           status: 'pending',
           timestamp: Date.now(),
         };
@@ -113,12 +191,11 @@ wss.on('connection', (ws) => {
         });
         chatHistory.push(recommendation);
         broadcast(recommendation);
+        console.log(`Hazard recommendation queued — ${intel.analysis}`);
 
-        const threadId = threadByTower.get(msg.towerId);
-        if (threadId) {
+        if (backboardThreadId) {
           try {
-            await addMessage(threadId, { type: 'hazard_report', ...msg, summary, protocol });
-            await addMessage(threadId, recommendation);
+            await addMessage(backboardThreadId, { type: 'hazard_report', id: msg.id, sender: msg.sender, vision: { text: visionText, objects: visionObjects }, analysis: intel.analysis, protocol: intel.protocol });
           } catch (err) {
             console.error('Backboard log error:', err.message);
           }
@@ -135,11 +212,12 @@ wss.on('connection', (ws) => {
               broadcast({ type: 'mission_info_update', missionInfo });
             });
 
+            const spokenText = approvedRec.analysis || approvedRec.protocol || 'New mission update approved.';
             try {
-              const audioUrl = await generateVoiceAlert(approvedRec.protocol);
+              const audioUrl = await generateVoiceAlert(spokenText);
               broadcast({
                 type: 'voice_alert',
-                text: approvedRec.protocol,
+                text: spokenText,
                 audioUrl,
                 target: 'responders',
               });
@@ -147,7 +225,7 @@ wss.on('connection', (ws) => {
               console.error('ElevenLabs error:', err.message);
               broadcast({
                 type: 'voice_alert',
-                text: approvedRec.protocol,
+                text: spokenText,
                 target: 'responders',
               });
             }
@@ -176,14 +254,8 @@ wss.on('connection', (ws) => {
         break;
       }
 
-      case 'message_approval': {
-        if (msg.action === 'approve' && !approvedContext.some(i => i.id === msg.messageId)) {
-          approvedContext.push({ type: 'intel', id: msg.messageId, content: msg.content, sender: msg.sender });
-          generateMissionInfo(approvedContext).then(missionInfo => {
-            broadcast({ type: 'mission_info_update', missionInfo });
-          });
-        }
-        broadcast({ type: 'message_approval_update', messageId: msg.messageId, action: msg.action });
+      case 'presence_ping': {
+        broadcast(msg);
         break;
       }
 

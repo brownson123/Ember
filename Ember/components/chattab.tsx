@@ -120,28 +120,6 @@ export default function ChatTab({ isTower }: ChatTabProps) {
       <View style={styles.bubble}>
         <Text style={styles.sender}>{item.sender}</Text>
         <Text style={styles.content}>{item.content}</Text>
-            {isTower && item.type === 'chat_message' && !item.status && (
-              <View style={styles.approvalButtons}>
-                <TouchableOpacity
-                  style={[styles.approvalBtn, styles.approvalDeny]}
-                  onPress={() => wsManager.send({ type: 'message_approval', action: 'deny', messageId: item.id, content: item.content, sender: item.sender })}
-                >
-                  <Text style={styles.approvalBtnText}>Deny</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.approvalBtn, styles.approvalApprove]}
-                  onPress={() => wsManager.send({ type: 'message_approval', action: 'approve', messageId: item.id, content: item.content, sender: item.sender })}
-                >
-                  <Text style={styles.approvalBtnText}>Approve</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            {isTower && item.type === 'chat_message' && item.status === 'approved' && (
-              <Text style={styles.approvedText}>Added to mission briefing</Text>
-            )}
-            {isTower && item.type === 'chat_message' && item.status === 'denied' && (
-              <Text style={styles.deniedText}>Excluded</Text>
-            )}
         {item.imageBase64 && (
           <Image
             source={{ uri: `data:image/jpeg;base64,${item.imageBase64}` }}

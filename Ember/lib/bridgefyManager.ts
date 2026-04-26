@@ -2,6 +2,7 @@
 let Bridgefy: any = null;
 let BridgefyEvents: any = null;
 let BridgefyPropagationProfile: any = null;
+let warnedUnavailable = false;
 
 try {
   const mod = require('bridgefy-react-native');
@@ -18,8 +19,12 @@ type BridgefyMessageHandler = (message: {
   payload: any;
 }) => void;
 
+type PeerListener = (peers: Set<string>) => void;
+
 class BridgefyManager {
   private handlers: Set<BridgefyMessageHandler> = new Set();
+  private peerListeners: Set<PeerListener> = new Set();
+  private connectedPeerIds: Set<string> = new Set();
   private isInitialized = false;
   private myUserId: string = '';
   private receiveSubscription?: { remove: () => void };
@@ -27,6 +32,20 @@ class BridgefyManager {
   async init(userId: string): Promise<void> {
     if (this.isInitialized || !userId) return;
     this.myUserId = userId;
+
+    // In Expo Go or when native linking is missing, the Bridgefy module resolves to null.
+    // Guard before calling any native APIs to avoid "cannot read property 'initialize' of null".
+    const isBridgefyAvailable =
+      !!Bridgefy &&
+      typeof Bridgefy.initialize === 'function' &&
+      typeof Bridgefy.start === 'function';
+    if (!isBridgefyAvailable) {
+      if (!warnedUnavailable) {
+        warnedUnavailable = true;
+        console.warn('Bridgefy init skipped: native module unavailable in this runtime.');
+      }
+      return;
+    }
 
     const apiKey = process.env.EXPO_PUBLIC_BRIDGEFY_API_KEY;
     if (!apiKey) {
@@ -54,14 +73,30 @@ class BridgefyManager {
         } catch (_e) {}
       });
 
-      // Device discovered / lost (optional)
       Bridgefy.addEventListener(BridgefyEvents.BRIDGEFY_DID_CONNECT, (data: any) => {
-        console.log('Device connected:', data);
+        const peerId = data?.userId ?? data?.peerId;
+        if (peerId) {
+          this.connectedPeerIds.add(peerId);
+          this.emitPeers();
+        }
       });
 
       Bridgefy.addEventListener(BridgefyEvents.BRIDGEFY_DID_DISCONNECT, (data: any) => {
-        console.log('Device lost:', data);
+        const peerId = data?.userId ?? data?.peerId;
+        if (peerId) {
+          this.connectedPeerIds.delete(peerId);
+          this.emitPeers();
+        }
       });
+
+      const peersEvent = BridgefyEvents?.BRIDGEFY_DID_UPDATE_CONNECTED_PEERS;
+      if (peersEvent) {
+        Bridgefy.addEventListener(peersEvent, (data: any) => {
+          const peers: string[] = Array.isArray(data?.peers) ? data.peers : [];
+          this.connectedPeerIds = new Set(peers);
+          this.emitPeers();
+        });
+      }
     } catch (error) {
       console.error('Bridgefy init error:', error);
     }
@@ -84,7 +119,7 @@ class BridgefyManager {
   sendToAll(message: { type: string; payload?: any }): boolean {
     if (!this.isInitialized) return false;
     // Bridgefy broadcast – automatically propagates to all reachable nodes in mesh
-    Bridgefy.sendBroadcast(JSON.stringify(message)).catch((error) => {
+    Bridgefy.sendBroadcast(JSON.stringify(message)).catch((error: unknown) => {
       console.error('Bridgefy send error:', error);
     });
     return true;
@@ -95,12 +130,27 @@ class BridgefyManager {
     return () => { this.handlers.delete(handler); };
   }
 
+  subscribeConnectedPeers(listener: PeerListener): () => void {
+    this.peerListeners.add(listener);
+    listener(new Set(this.connectedPeerIds));
+    return () => { this.peerListeners.delete(listener); };
+  }
+
+  getConnectedPeers(): Set<string> {
+    return new Set(this.connectedPeerIds);
+  }
+
   getMyUserId(): string {
     return this.myUserId;
   }
 
   isReady(): boolean {
     return this.isInitialized;
+  }
+
+  private emitPeers() {
+    const snapshot = new Set(this.connectedPeerIds);
+    this.peerListeners.forEach((l) => l(snapshot));
   }
 }
 

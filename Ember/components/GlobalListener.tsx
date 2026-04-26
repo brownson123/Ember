@@ -76,13 +76,6 @@ export default function GlobalListener() {
           dispatch({ type: 'MARK_INFO_READ' });
           break;
 
-        case 'message_approval_update':
-          dispatch({
-            type: 'UPDATE_MESSAGE',
-            payload: { id: data.messageId, status: data.action === 'approve' ? 'approved' : 'denied' },
-          });
-          break;
-
         case 'voice_alert':
           if (state.role === 'tower') break;
           if (data?.audioUrl) {

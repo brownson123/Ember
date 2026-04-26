@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "Ember",
-    "slug": "Ember",
+    "name": "Nexus Link",
+    "slug": "nexus-link",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "ember",
+    "scheme": "nexuslink",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.Ember"
+      "bundleIdentifier": "com.anonymous.NexusLink"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +21,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.Ember"
+      "package": "com.anonymous.NexusLink"
     },
     "web": {
       "output": "static",

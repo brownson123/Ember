@@ -12,7 +12,7 @@ export interface ChatMessage {
   status?: 'pending' | 'approved' | 'denied' | null;
 }
 
-type AppTab = 'overview' | 'chat' | 'info';
+type AppTab = 'overview' | 'chat' | 'info' | 'sonar';
 
 export interface AIRecommendation {
   id: string;
@@ -37,7 +37,6 @@ interface AppState {
   missionInfo: {
     summary: string;
     hazards: { analysis: string; protocol: string }[];
-    intel: { sender: string; content: string }[];
     riskLevel: string;
   } | null;
 }

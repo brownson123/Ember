@@ -6,17 +6,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
-  Dimensions,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
-import Svg, { Rect, Defs, Pattern, Path } from 'react-native-svg';
-import { supabase } from '@/lib/supabase'; 
+import AuthBackgroundCarousel from '@/components/AuthBackgroundCarousel';
+import { supabase } from '@/lib/supabase';
 
-const { width, height } = Dimensions.get('window');
 const ADMIN_VERIFICATION_ID = '001';
 
 export default function LoginScreen() {
@@ -117,36 +115,22 @@ export default function LoginScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Caution themed background */}
-      <View style={styles.bgPattern}>
-        <Svg width={width} height={height}>
-          <Defs>
-            <Pattern
-              id="hazard"
-              x="0"
-              y="0"
-              width="64"
-              height="64"
-              patternUnits="userSpaceOnUse"
-            >
-              <Path d="M 0 64 L 64 0" stroke="#f59e0b" strokeWidth="2" opacity="0.2" />
-              <Path d="M -16 64 L 48 0" stroke="#f59e0b" strokeWidth="2" opacity="0.2" />
-              <Path d="M 16 64 L 80 0" stroke="#f59e0b" strokeWidth="2" opacity="0.2" />
-            </Pattern>
-          </Defs>
-          <Rect width={width} height={height} fill="#0f1117" />
-          <Rect width={width} height={height} fill="url(#hazard)" />
-        </Svg>
-      </View>
+      {/* Carousel of emergency-personnel imagery */}
+      <AuthBackgroundCarousel />
 
       <View style={styles.content}>
         {/* Hero */}
         <View style={styles.hero}>
           <View style={styles.shieldContainer}>
             <View style={styles.glow} />
-            <MaterialCommunityIcons name="alert-outline" size={72} color="#f59e0b" />
+            <MaterialCommunityIcons name="link-variant" size={72} color="#f59e0b" />
           </View>
-          <Text style={styles.title}>Ember</Text>
+          <Text style={styles.title}>
+            <Text style={{ color: '#ffffff' }}>Nexus</Text>
+            <Text style={{ color: '#ffffff' }}> </Text>
+            <Text style={{ color: '#1e3a8a' }}>Link</Text>
+          </Text>
+          <Text style={styles.subtitle}>Mission coordination for first responders</Text>
         </View>
 
         {/* Error message */}
@@ -256,10 +240,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f1117',
   },
-  bgPattern: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
   content: {
     flex: 1,
     zIndex: 10,
@@ -287,10 +267,21 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.5 }],
   },
   title: {
-    color: '#f8fafc',
-    fontSize: 30,
-    letterSpacing: 1.2,
-    fontWeight: '700',
+    fontSize: 38,
+    letterSpacing: 1.6,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 10,
+  },
+  subtitle: {
+    color: '#cbd5f5',
+    fontSize: 13,
+    letterSpacing: 0.6,
+    marginTop: 6,
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   form: {
     width: '100%',
